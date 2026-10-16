@@ -1,5 +1,5 @@
 /**
- * Build-configured model allowlist for opt-in enterprise deployments.
+ * Build-configured private endpoint policy for opt-in enterprise deployments.
  *
  * Guards agent model calls. It does not replace network/CSP egress controls.
  * Never put credentials in VITE_* settings (they are embedded in client JS).
@@ -9,13 +9,11 @@ import { OPENAI_GATEWAY_PROVIDER_PREFIX } from "./custom-gateways.js";
 
 export interface EnterpriseModelPolicy {
   baseUrl: string;
-  modelIds: ReadonlySet<string>;
 }
 
 export interface EnterpriseModelPolicyConfig {
   enabled: boolean;
   baseUrl?: string;
-  modelIds?: string;
 }
 
 function normalizeApprovedBaseUrl(raw: string): string {
@@ -52,16 +50,7 @@ export function parseEnterpriseModelPolicy(
   if (!config.enabled) return null;
 
   const baseUrl = normalizeApprovedBaseUrl(config.baseUrl ?? "");
-  const suppliedIds = config.modelIds ?? "";
-  const modelIds = suppliedIds.split(",").map((id) => id.trim());
-  if (
-    modelIds.length > 32
-    || modelIds.some((id) => !id || id.length > 256 || /[\s*]/u.test(id))
-  ) {
-    throw new Error("Enterprise model IDs must be a non-empty comma-separated list (max 32).");
-  }
-
-  return { baseUrl, modelIds: new Set(modelIds) };
+  return { baseUrl };
 }
 
 /** The build deliberately contains only endpoint and model names, never API keys. */
@@ -70,7 +59,6 @@ export function readBuildEnterpriseModelPolicy(): EnterpriseModelPolicy | null {
   return parseEnterpriseModelPolicy({
     enabled: env?.VITE_PI_ENTERPRISE_MODE === "true",
     baseUrl: env?.VITE_PI_ENTERPRISE_API_BASE_URL,
-    modelIds: env?.VITE_PI_ENTERPRISE_MODEL_IDS,
   });
 }
 
@@ -80,7 +68,6 @@ export function isEnterpriseModelAllowed(
 ): boolean {
   if (model.api !== "openai-completions") return false;
   if (!model.provider.startsWith(OPENAI_GATEWAY_PROVIDER_PREFIX)) return false;
-  if (!policy.modelIds.has(model.id)) return false;
   if (!model.baseUrl) return false;
 
   try {
@@ -97,6 +84,6 @@ export function assertEnterpriseModelAllowed(
   model: Pick<Model<Api>, "provider" | "api" | "baseUrl" | "id">,
 ): void {
   if (!isEnterpriseModelAllowed(policy, model)) {
-    throw new Error("Enterprise policy blocked an unapproved model or API endpoint.");
+    throw new Error("Enterprise policy blocked an unapproved API endpoint or provider.");
   }
 }
