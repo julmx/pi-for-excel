@@ -24,6 +24,7 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 
+import { assertEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "./enterprise-model-policy.js";
 import { isDebugEnabled } from "../debug/debug.js";
 import { selectToolBundle, type ToolBundleId } from "../context/tool-disclosure.js";
 import { modelRecencyScore } from "../models/model-ordering.js";
@@ -572,6 +573,10 @@ export function createOfficeStreamFn(
     if (enterprisePolicy) {
       assertEnterpriseModelAllowed(enterprisePolicy, model);
     }
+    const enterprisePolicy = readBuildEnterpriseModelPolicy();
+    if (enterprisePolicy) {
+      assertEnterpriseModelAllowed(enterprisePolicy, model);
+    }
     const continuation = isToolContinuation(context.messages);
     const replayedContext: Context = {
       systemPrompt: getCurrentSystemPrompt(context.messages),
@@ -598,7 +603,9 @@ export function createOfficeStreamFn(
       return modelsRuntime.streamSimple(normalizedModel, context, effectiveOptions);
     }
 
-    const proxyUrl = await getProxyUrl();
+    // Custom gateways normally force a proxy; enterprise mode intentionally
+    // calls the approved endpoint directly (CORS must permit this origin).
+    const proxyUrl = enterprisePolicy ? undefined : await getProxyUrl();
     const needsCodexBridge = requiresCodexWebSocketBridge(normalizedModel);
     const needsOpenRouterProxy = normalizedModel.provider === "openrouter"
       && normalizedModel.api === "anthropic-messages";
