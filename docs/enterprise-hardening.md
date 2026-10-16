@@ -1,118 +1,117 @@
-# Enterprise hardening: first step (not production approval)
+# Enterprise deployment hardening (work in progress)
 
-This fork can build a **restricted agent tool list** with `VITE_PI_ENTERPRISE_MODE=true`.
+> **Do not use confidential workbooks yet.** This is an opt-in technical
+> prototype, not a reviewed or certified enterprise security control.
 
-## What this initial change does
+## Intended architecture
 
-When enabled at build time, the agent receives only explicitly allowlisted
-first-party Excel tools from `src/tools/enterprise-policy.ts`. Terminal/tmux,
-Python, arbitrary Office.js/WPS JS, file workspace, skills, integration tools,
-MCP, web search, external fetch, and extension-provided tools are **not included
-in the agent's advertised executable tool list**. The standard build is unchanged.
+Self-host the Excel taskpane under a company-controlled HTTPS origin.
+Use exactly one approved HTTPS OpenAI-compatible API base URL. **All models
+served by that API are permitted**, without a separate model-ID allowlist.
+The corporate API key must never be committed or included in a `VITE_*`
+environment variable, since those variables are embedded in client bundles.
 
-For a local proof of concept with **synthetic data only**:
+Build the restricted client with a non-secret example endpoint:
 
 ```bash
 npm ci
-VITE_PI_ENTERPRISE_MODE=true npm run build
-npm run test:context
-```
-
-## Still required before confidential use
-
-1. **Model/endpoint enforcement:** the user interface's provider filter is not a
-   security boundary. Make provider selection and outbound model calls fail
-   closed for everything except the company-approved endpoint; all models it serves are permitted.
-2. **Network policy:** self-host the add-in using an enterprise-controlled
-   origin and configure a strict Content-Security-Policy and egress controls.
-   The upstream Vercel deployment and default CSP are not acceptable for this
-   scenario. Check CORS behavior of the internal API or use an authenticated,
-   strictly allowlisted internal proxy.
-3. **Other execution surfaces:** investigate and disable extension loading,
-   custom commands, code paths not dispatched as agent tools, optional bridges,
-   and arbitrary third-party content. Tool filtering does not disable these
-   subsystems by itself.
-4. **Mutation approval:** force confirmation mode in the deployed build and
-   prevent user or persisted settings from silently switching to auto.
-5. **Secrets and logs:** audit IndexedDB credentials, error reporting,
-   remote assets, prompts, and local session history. Do not place live keys
-   or company-private URLs in a public fork.
-6. **Validation:** run tests and a network capture in Excel on the actual
-   deployment artifact. Check that API outage fails closed with no public
-   provider fallback.
-
-**This change is a partial defense, not a security certification.** Do not
-use the fork with confidential workbooks until the remaining controls are
-implemented and validated by the organization.
-
-## Step 2: approved internal LLM endpoint (draft)
-
-In the enterprise build, configure an exact **HTTPS OpenAI-compatible base
-URL** ; all models exposed by that endpoint are allowed. The values below are
-examples, not a corporate endpoint:
-
-```bash
 VITE_PI_ENTERPRISE_MODE=true \
 VITE_PI_ENTERPRISE_API_BASE_URL=https://api.example.invalid/llm/v1 \
 npm run build
+npm run test:enterprise
 ```
 
-**Never put an API key in a VITE_ variable** (Vite embeds it in browser JS).
-Provision the credential through an approved runtime authentication mechanism.
+The build fails during startup if the endpoint is absent or malformed.
+The default build (without `VITE_PI_ENTERPRISE_MODE=true`) retains upstream
+behavior.
 
-The enterprise build now:
-- refuses to initialize if its endpoint is missing;
-- validates selected model's API type, provider, full base URL at
-  the agent stream boundary, before forwarding the prompt;
-- avoids optional user-configured CORS proxies for those LLM calls;
-- filters the model selection dialog to models from the approved endpoint.
+## What the prototype currently restricts
 
-The approved model must be configured as a **custom OpenAI-compatible gateway**
-with an identical base URL; no per-model allowlist is required. A previously selected public
-model will be refused, not silently substituted.
+- **Agent tools:** Only reviewed, first-party Excel operations are exposed
+  to the agent. Python, terminal, arbitrary Office.js, MCP, web search,
+  external integrations, skills and extension tools are excluded from its
+  tool registry. Other runtime entry points still require an audit.
+- **Agent model transport:** The main agent stream accepts only custom
+  `openai-completions` gateways with the **exact approved base URL**.
+  The request cannot silently fall back to a public model or user-configured
+  external proxy.
+- **Startup catalogue:** Public built-in providers are not registered in
+  restricted mode. An unauthenticated, non-operational bootstrap entry lets
+  the taskpane start before a corporate gateway is configured. Public provider
+  login options are hidden on the initial welcome screen.
+- **Gateway discovery:** After adding a corporate custom gateway (including
+  one initial model identifier), model refresh calls
+  `<approved base URL>/models` directly, using the gateway credential if
+  configured. The reported model IDs are merged into the selector and cached.
+  Existing normal-build custom gateway behavior is unchanged.
+- **Fetch defense in depth:** Browser `window.fetch` calls in restricted
+  builds are limited to same-origin resources and the approved gateway's
+  `/models` and `/chat/completions` paths. Other destinations fail closed.
+  This is not a complete network boundary.
 
-**Important limitations:** This is not yet a global outbound network policy.
-Other fetch paths, model refresh/discovery, authentication, startup assets,
-extensions and non-agent model calls may still reach external hosts. The model
-selector is only a convenience; the stream check is the agent-call guard.
-The endpoint URL are visible in the built client and must not be
-treated as secret. Corporate API/browser CORS support still needs verification.
-Do not use confidential workbooks until a strict CSP, network egress policy,
-full call-path audit and Excel tests are complete.
+Model catalogue parsing is limited (size, count and ID length). Discovered
+models initially inherit the manually configured model's metadata such as
+context window, so different model limits should be reviewed separately.
 
-Suggested verification on synthetic data: `npm run check`,
-`npm run build`, `npm run test:context`, `npm run test:security`, and
-`node --test --experimental-strip-types --import ./scripts/register-test-ts-loader.mjs tests/enterprise-model-policy.test.ts`.
+If the API lacks `/models`, the manually configured model can still be
+used, but automatic discovery will not work.
 
-## Approved model transport (second phase)
+## Required HTTPS response headers
 
-Enterprise builds require one **non-secret** HTTPS API base URL:
+`scripts/enterprise-csp.mjs` produces a restrictive Content Security
+Policy that only permits the hosted taskpane's origin, the approved API
+origin and the Office.js CDN where needed.
+
+For a **loopback-only smoke test of the production build**, configure the
+server's policy independently of the Vite build variables:
 
 ```bash
-VITE_PI_ENTERPRISE_MODE=true \
-VITE_PI_ENTERPRISE_API_BASE_URL=https://example.invalid/llm/v1 \
-npm run build
+ENTERPRISE_MODE=1 \
+ENTERPRISE_API_BASE_URL=https://api.example.invalid/llm/v1 \
+npm run serve:dist
 ```
 
-The URL must not contain credentials, a query or a fragment.
-Missing or malformed endpoint configuration fails at taskpane startup.
+The serving script rejects missing/invalid endpoint configuration and sends
+CSP, no-referrer and nosniff headers. In an actual corporate deployment,
+**the enterprise reverse proxy or web server must apply an equivalent CSP
+header**. Do not deploy the upstream Vercel manifest or upstream broad CSP.
 
-Agent LLM requests are rejected unless they use the `openai-completions`
-protocol, a custom gateway provider, and the exact approved API base URL.
-**All model IDs exposed by this gateway are allowed**; new models do not
-require rebuilding an allowlist. No fallback to public LLM providers is
-allowed. The model chooser hides gateways pointing elsewhere.
+This first CSP may block optional Office.js behavior, extensions and remote
+assets; test with Excel for Windows/Web and revise only after network review.
+Office.js itself is still loaded from Microsoft's CDN; this solution does not
+make Microsoft 365 fully offline.
 
-The approved agent transport bypasses the optional Pi CORS proxy and
-connects directly. The internal API must therefore allow the taskpane
-origin via CORS, or an independently secured internal gateway is needed.
+## Verification
 
-Configure the custom gateway and its credentials using the existing UI.
-Never put a credential in `VITE_*` variables: those values are embedded
-in the client JavaScript bundle.
+```bash
+npm run check
+npm run build
+npm run test:enterprise
+npm run test:models
+npm run test:context
+npm run test:security
+```
 
-**Not ready for confidential workbooks:** startup model discovery, other
-network requests, remote code/assets, extensions and alternative model call
-paths still require auditing and network restrictions. An internal hosting
-origin, restrictive CSP, egress enforcement, Excel tests and traffic capture
-are required before deployment.
+Use only synthetic data for an Excel smoke test. Capture and review outbound
+network traffic during initialization, model refresh, direct calls, tool
+execution, and API failure. Confirm that there is **no fallback** to a public
+LLM or proxy if the corporate API or credential fails.
+
+## Known gaps before production
+
+1. A `fetch` interceptor is not a security boundary. Other transports
+   (XHR, WebSockets, resources loaded by the browser, captured references,
+   code extensions) need separate review; CSP plus infrastructure egress
+   controls and an approved internal hosting origin remain mandatory.
+2. Runtime entry points beyond the main agent stream may still execute
+   model calls or arbitrary code. Review extensions, commands, Python and
+   local bridges, and disable unwanted subsystems completely.
+3. Credentials and session history are currently stored in IndexedDB.
+   Review token handling, XSS boundaries, logging, retention and data
+   minimization, potentially replacing direct browser API keys with an
+   enterprise-authenticated internal gateway.
+4. Require confirmation for workbook mutations and prevent stored settings
+   from silently switching back to automatic execution.
+5. Validate CORS and Office.js compatibility, the exact gateway protocol,
+   capabilities of individual discovered models (especially tool calling),
+   full CI checks, and network traces before allowing confidential data.
