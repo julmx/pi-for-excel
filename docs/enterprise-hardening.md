@@ -84,3 +84,36 @@ full call-path audit and Excel tests are complete.
 Suggested verification on synthetic data: `npm run check`,
 `npm run build`, `npm run test:context`, `npm run test:security`, and
 `node --test --experimental-strip-types --import ./scripts/register-test-ts-loader.mjs tests/enterprise-model-policy.test.ts`.
+
+## Approved model transport (second phase)
+
+Opt-in builds now require these **non-secret** build settings:
+
+```bash
+VITE_PI_ENTERPRISE_MODE=true \
+VITE_PI_ENTERPRISE_API_BASE_URL=https://example.invalid/llm/v1 \
+VITE_PI_ENTERPRISE_MODEL_IDS=approved-model \
+npm run build
+```
+
+The configured base URL must be HTTPS and may not contain embedded credentials,
+query parameters or fragments. The list of model IDs must be explicit. Missing
+or malformed configuration fails during taskpane startup.
+
+The agent stream rejects models unless they use `openai-completions`, have a
+custom gateway provider name, match an approved model ID and use the exact
+configured API base URL. Approved requests deliberately bypass the optional
+generic Pi proxy and go directly to the corporate API. Therefore **CORS must
+allow the hosted taskpane's origin**; a separate trusted internal gateway may be
+needed in the future. The model chooser hides unapproved models.
+
+Configure the gateway and its API key through the existing custom gateway UI
+with the approved URL/model. Never put API keys in `VITE_*` variables; their
+values become part of the public browser bundle.
+
+**Remaining risks:** built-in provider discovery and user-configured settings
+still exist; the startup provider catalogue is not entirely restricted. Other
+subsystems may make network requests outside the agent stream path. A strict
+CSP, approved hosting, full fetch/egress policy, disabling remote features,
+credential handling, end-to-end tests and network inspection are still required.
+This is *not* safe for confidential workbooks yet.
