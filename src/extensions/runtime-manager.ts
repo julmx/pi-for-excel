@@ -183,6 +183,8 @@ export interface ExtensionRuntimeManagerOptions {
   loadExtensionFromSource?: typeof loadExtension;
   activateInSandbox?: typeof activateExtensionInSandbox;
   showToastMessage?: typeof showToast;
+  /** Disable untrusted extension loading and management in restricted deployments. */
+  disabled?: boolean;
 }
 
 export class ExtensionRuntimeManager {
@@ -197,6 +199,7 @@ export class ExtensionRuntimeManager {
   private readonly loadExtensionFromSource: typeof loadExtension;
   private readonly activateInSandbox: typeof activateExtensionInSandbox;
   private readonly showToastMessage: typeof showToast;
+  private readonly disabled: boolean;
 
   private readonly listeners = new Set<ManagerListener>();
   private readonly activeStates = new Map<string, LoadedExtensionState>();
@@ -221,6 +224,7 @@ export class ExtensionRuntimeManager {
     this.loadExtensionFromSource = options.loadExtensionFromSource ?? loadExtension;
     this.activateInSandbox = options.activateInSandbox ?? activateExtensionInSandbox;
     this.showToastMessage = options.showToastMessage ?? showToast;
+    this.disabled = options.disabled === true;
   }
 
   subscribe(listener: ManagerListener): () => void {
@@ -268,11 +272,17 @@ export class ExtensionRuntimeManager {
   }
 
   getRegisteredTools(): AnyAgentTool[] {
-    return Array.from(this.extensionTools.values());
+    return this.disabled ? [] : Array.from(this.extensionTools.values());
   }
 
   getToolRevision(): number {
     return this.extensionToolRevision;
+  }
+
+  private assertExtensionsEnabled(): void {
+    if (this.disabled) {
+      throw new Error("Extensions are disabled by enterprise policy.");
+    }
   }
 
   private bumpExtensionToolRevision(): void {
@@ -280,6 +290,12 @@ export class ExtensionRuntimeManager {
   }
 
   async initialize(): Promise<void> {
+    if (this.disabled) {
+      // Do not even load persisted extension sources in restricted builds.
+      this.initialized = true;
+      this.notify();
+      return;
+    }
     if (this.initialized) {
       return;
     }
@@ -299,6 +315,7 @@ export class ExtensionRuntimeManager {
   }
 
   async reloadExtension(entryId: string): Promise<void> {
+    this.assertExtensionsEnabled();
     const entry = this.getEntryById(entryId);
     if (!entry) {
       throw new Error("Extension not found");
@@ -314,6 +331,7 @@ export class ExtensionRuntimeManager {
   }
 
   async setExtensionEnabled(entryId: string, enabled: boolean): Promise<void> {
+    this.assertExtensionsEnabled();
     const entry = this.getEntryById(entryId);
     if (!entry) {
       throw new Error("Extension not found");
@@ -341,6 +359,7 @@ export class ExtensionRuntimeManager {
     capability: ExtensionCapability,
     allowed: boolean,
   ): Promise<void> {
+    this.assertExtensionsEnabled();
     const entry = this.getEntryById(entryId);
     if (!entry) {
       throw new Error("Extension not found");
@@ -364,6 +383,7 @@ export class ExtensionRuntimeManager {
   }
 
   async uninstallExtension(entryId: string): Promise<void> {
+    this.assertExtensionsEnabled();
     const entryIndex = this.entries.findIndex((entry) => entry.id === entryId);
     if (entryIndex < 0) {
       throw new Error("Extension not found");
@@ -380,6 +400,7 @@ export class ExtensionRuntimeManager {
   }
 
   async installFromUrl(name: string, url: string): Promise<string> {
+    this.assertExtensionsEnabled();
     return this.installEntry({
       name: normalizeExtensionName(name),
       source: {
@@ -390,6 +411,7 @@ export class ExtensionRuntimeManager {
   }
 
   async installFromCode(name: string, code: string): Promise<string> {
+    this.assertExtensionsEnabled();
     return this.installEntry({
       name: normalizeExtensionName(name),
       source: {
@@ -400,6 +422,7 @@ export class ExtensionRuntimeManager {
   }
 
   async installFromModuleSpecifier(name: string, specifier: string): Promise<string> {
+    this.assertExtensionsEnabled();
     const normalizedSpecifier = specifier.trim();
     if (normalizedSpecifier.length === 0) {
       throw new Error("Module specifier cannot be empty");
@@ -597,6 +620,7 @@ export class ExtensionRuntimeManager {
     name: string;
     source: StoredExtensionSource;
   }): Promise<string> {
+    this.assertExtensionsEnabled();
     const now = new Date().toISOString();
     const id = `ext.${crypto.randomUUID()}`;
 
@@ -621,6 +645,7 @@ export class ExtensionRuntimeManager {
   }
 
   private async tryActivateEntry(entry: StoredExtensionEntry): Promise<void> {
+    this.assertExtensionsEnabled();
     try {
       await this.activateEntry(entry);
       this.lastErrors.delete(entry.id);
@@ -632,6 +657,7 @@ export class ExtensionRuntimeManager {
   }
 
   private async activateEntry(entry: StoredExtensionEntry): Promise<void> {
+    this.assertExtensionsEnabled();
     await this.deactivateEntry(entry.id);
     this.connectionManager.unregisterDefinitionsByOwner(entry.id);
 
