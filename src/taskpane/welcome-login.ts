@@ -42,26 +42,26 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
   // Enterprise builds never probe or auto-enable an optional local CORS
   // proxy. Direct access to the approved corporate API is required.
   if (!enterpriseMode) {
-  // Make OAuth flows usable even before the user can access /settings.
-  try {
-    const storage = getAppStorage();
-    const proxySettings = await readTaskpaneProxySettings(storage.settings);
-    const currentUrl = resolveConfiguredProxyUrl(proxySettings.url);
+    // Make OAuth flows usable even before the user can access /settings.
+    try {
+      const storage = getAppStorage();
+      const proxySettings = await readTaskpaneProxySettings(storage.settings);
+      const currentUrl = resolveConfiguredProxyUrl(proxySettings.url);
 
-    if (proxySettings.url === null) {
-      await storage.settings.set("proxy.url", currentUrl);
-    }
-
-    // Auto-enable if a local HTTPS proxy is actually reachable.
-    if (!proxySettings.enabled) {
-      const ok = await testLocalHttpsProxy(currentUrl);
-      if (ok) {
-        await storage.settings.set("proxy.enabled", true);
+      if (proxySettings.url === null) {
+        await storage.settings.set("proxy.url", currentUrl);
       }
+
+      // Auto-enable if a local HTTPS proxy is actually reachable.
+      if (!proxySettings.enabled) {
+        const ok = await testLocalHttpsProxy(currentUrl);
+        if (ok) {
+          await storage.settings.set("proxy.enabled", true);
+        }
+      }
+    } catch {
+      // ignore — welcome overlay should still show
     }
-  } catch {
-    // ignore — welcome overlay should still show
-  }
 
   }
 
