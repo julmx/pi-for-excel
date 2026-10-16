@@ -22,7 +22,7 @@ npm run test:context
 
 1. **Model/endpoint enforcement:** the user interface's provider filter is not a
    security boundary. Make provider selection and outbound model calls fail
-   closed for everything except the company-approved URL and model IDs.
+   closed for everything except the company-approved endpoint (all models served by that endpoint are permitted).
 2. **Network policy:** self-host the add-in using an enterprise-controlled
    origin and configure a strict Content-Security-Policy and egress controls.
    The upstream Vercel deployment and default CSP are not acceptable for this
@@ -48,13 +48,12 @@ implemented and validated by the organization.
 ## Step 2: approved internal LLM endpoint (draft)
 
 In the enterprise build, configure an exact **HTTPS OpenAI-compatible base
-URL** and a comma-separated list of approved model IDs. The values below are
+URL** ; all models exposed by that endpoint are allowed. The values below are
 examples, not a corporate endpoint:
 
 ```bash
 VITE_PI_ENTERPRISE_MODE=true \
 VITE_PI_ENTERPRISE_API_BASE_URL=https://api.example.invalid/llm/v1 \
-VITE_PI_ENTERPRISE_MODEL_IDS=internal-model,internal-model-fast \
 npm run build
 ```
 
@@ -62,14 +61,14 @@ npm run build
 Provision the credential through an approved runtime authentication mechanism.
 
 The enterprise build now:
-- refuses to initialize if its endpoint or model allowlist is missing;
-- validates selected model's API type, provider, full base URL and model ID at
+- refuses to initialize if its endpoint is missing;
+- validates selected model's API type, provider, full base URL at
   the agent stream boundary, before forwarding the prompt;
 - avoids optional user-configured CORS proxies for those LLM calls;
-- filters the model selection dialog to approved models.
+- filters the model selection dialog to models from the approved endpoint.
 
 The approved model must be configured as a **custom OpenAI-compatible gateway**
-with an identical base URL and listed model ID. A previously selected public
+with an identical base URL ; no per-model allowlist is required. A previously selected public
 model will be refused, not silently substituted.
 
 **Important limitations:** This is not yet a global outbound network policy.
