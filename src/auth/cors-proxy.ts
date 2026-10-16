@@ -11,6 +11,8 @@
  */
 
 import { getAppStorage } from "../storage/local/app-storage.js";
+import { readBuildEnterpriseModelPolicy } from "./enterprise-model-policy.js";
+import { isEnterpriseFetchUrlAllowed } from "./enterprise-fetch-policy.js";
 
 import {
   DEFAULT_PROXY_URL,
@@ -149,6 +151,15 @@ export function installFetchInterceptor(settings?: SettingsReader): void {
       : input instanceof URL
         ? input.toString()
         : input.url;
+
+    // Restricted builds do not permit arbitrary external fetch or proxy rewrites.
+    const enterprisePolicy = readBuildEnterpriseModelPolicy();
+    if (enterprisePolicy) {
+      if (!isEnterpriseFetchUrlAllowed(enterprisePolicy, url, window.location.origin)) {
+        throw new Error("Enterprise network policy blocked an unapproved fetch destination.");
+      }
+      return originalFetch(input, init);
+    }
 
     // Relative URLs: never rewrite
     if (!/^https?:\/\//i.test(url)) {
