@@ -44,3 +44,43 @@ npm run test:context
 **This change is a partial defense, not a security certification.** Do not
 use the fork with confidential workbooks until the remaining controls are
 implemented and validated by the organization.
+
+## Step 2: approved internal LLM endpoint (draft)
+
+In the enterprise build, configure an exact **HTTPS OpenAI-compatible base
+URL** and a comma-separated list of approved model IDs. The values below are
+examples, not a corporate endpoint:
+
+```bash
+VITE_PI_ENTERPRISE_MODE=true \
+VITE_PI_ENTERPRISE_API_BASE_URL=https://api.example.invalid/llm/v1 \
+VITE_PI_ENTERPRISE_MODEL_IDS=internal-model,internal-model-fast \
+npm run build
+```
+
+**Never put an API key in a VITE_ variable** (Vite embeds it in browser JS).
+Provision the credential through an approved runtime authentication mechanism.
+
+The enterprise build now:
+- refuses to initialize if its endpoint or model allowlist is missing;
+- validates selected model's API type, provider, full base URL and model ID at
+  the agent stream boundary, before forwarding the prompt;
+- avoids optional user-configured CORS proxies for those LLM calls;
+- filters the model selection dialog to approved models.
+
+The approved model must be configured as a **custom OpenAI-compatible gateway**
+with an identical base URL and listed model ID. A previously selected public
+model will be refused, not silently substituted.
+
+**Important limitations:** This is not yet a global outbound network policy.
+Other fetch paths, model refresh/discovery, authentication, startup assets,
+extensions and non-agent model calls may still reach external hosts. The model
+selector is only a convenience; the stream check is the agent-call guard.
+The endpoint/model values are visible in the built client and must not be
+treated as secret. Corporate API/browser CORS support still needs verification.
+Do not use confidential workbooks until a strict CSP, network egress policy,
+full call-path audit and Excel tests are complete.
+
+Suggested verification on synthetic data: `npm run check`,
+`npm run build`, `npm run test:context`, `npm run test:security`, and
+`node --test --experimental-strip-types --import ./scripts/register-test-ts-loader.mjs tests/enterprise-model-policy.test.ts`.
