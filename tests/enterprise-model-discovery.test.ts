@@ -113,6 +113,8 @@ void test("enterprise mode discovers approved gateway models without an external
       }));
     },
   });
+  assert.equal(runtime.models.getModel("openai", "gpt-5.6-sol"), undefined);
+  assert.ok(runtime.models.getModel("enterprise-bootstrap", "configure-gateway"));
   await runtime.syncCustomProviders(await providers.getAll());
   const result = await runtime.refresh({ allowNetwork: true, force: true });
 
