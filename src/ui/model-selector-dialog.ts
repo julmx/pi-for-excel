@@ -21,6 +21,7 @@ import {
 
 import { t } from "../language/index.js";
 import { getActiveProviders } from "../models/active-providers.js";
+import { isEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 import {
   orderModelsForSelector,
   subsequenceScore,
@@ -52,7 +53,8 @@ function collectModelItems(modelsRuntime: Models): ModelSelectorItem[] {
       items.push({ provider: provider.id, id: model.id, model });
     }
   }
-  return items;
+  const policy = readBuildEnterpriseModelPolicy();
+  return policy ? items.filter((item) => isEnterpriseModelAllowed(policy, item.model)) : items;
 }
 
 export function openModelSelectorDialog(options: ModelSelectorDialogOptions): void {
