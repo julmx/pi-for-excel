@@ -156,6 +156,14 @@ initial synthetic test. Off sends `none` for an explicitly enabled unknown
 model. Automatic retains registered-model detection and defaults unknown
 models to reasoning disabled. Validate actual reasoning output with your API.
 
+The gateway form also exposes **Max context tokens** and **Max output tokens**.
+Set these to the limits of your actual API deployment (for example, 262144
+context and 16000 output tokens for a deployment configured with those limits).
+The output limit must be a positive integer no greater than the context limit.
+Leaving output blank uses matched registry metadata, or 4096 for an unknown
+model, clamped to the context limit. Saving an explicit value overrides that
+default and preserves it across discovery and restart.
+
 ## 6. Network and security validation
 
 Before using real data, verify on the **actual Windows Excel WebView**:
