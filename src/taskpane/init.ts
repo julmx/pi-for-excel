@@ -17,7 +17,6 @@ import type { SessionData } from "../storage/local/types.js";
 
 import { createOfficeStreamFn } from "../auth/stream-proxy.js";
 import { readBuildEnterpriseModelPolicy, isEnterpriseModelAllowed } from "../auth/enterprise-model-policy.js";
-import { readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 import {
   DEFAULT_PROXY_URL,
   PROXY_HELPER_DOCS_URL,
@@ -223,9 +222,6 @@ export async function initTaskpane(opts: {
   const { appEl, errorRoot, autoResizeImages } = opts;
   // Validate enterprise settings before storage, authentication, or model discovery.
   const enterprisePolicy = readBuildEnterpriseModelPolicy();
-
-  // A restricted build must fail during initialization if policy is incomplete.
-  readBuildEnterpriseModelPolicy();
 
   const changeTracker = new ChangeTracker();
   const spreadsheetHost = getCurrentSpreadsheetHost();
