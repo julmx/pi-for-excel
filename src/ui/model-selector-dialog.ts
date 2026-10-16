@@ -22,7 +22,7 @@ import {
 import { t } from "../language/index.js";
 import { readBuildEnterpriseModelPolicy, isEnterpriseModelAllowed } from "../auth/enterprise-model-policy.js";
 import { getActiveProviders } from "../models/active-providers.js";
-import { isEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
+
 import {
   orderModelsForSelector,
   subsequenceScore,
