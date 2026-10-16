@@ -58,7 +58,7 @@ export function readBuildEnterpriseModelPolicy(): EnterpriseModelPolicy | null {
   const env = import.meta.env;
   return parseEnterpriseModelPolicy({
     enabled: env?.VITE_PI_ENTERPRISE_MODE === "true",
-    baseUrl: env?.VITE_PI_ENTERPRISE_API_BASE_URL,
+    baseUrl: env?.VITE_PI_ENTERPRISE_API_BASE_URL ?? "",
   });
 }
 
