@@ -7,6 +7,7 @@ import { ConnectionManager } from "../src/connections/manager.ts";
 import { ExtensionRuntimeManager } from "../src/extensions/runtime-manager.ts";
 import { EXTENSIONS_REGISTRY_STORAGE_KEY } from "../src/extensions/store.ts";
 import { BrowserModelRuntime } from "../src/models/browser-model-runtime.ts";
+import { createExecutionModeController } from "../src/execution/controller.ts";
 import {
   getStoredExecutionMode,
   setStoredExecutionMode,
@@ -86,6 +87,12 @@ void test("workbook mutation confirmation remains optional and user-selectable",
 
   await setStoredExecutionMode(settings, "safe");
   assert.equal(await getStoredExecutionMode(settings), "safe");
-  await setStoredExecutionMode(settings, toggleExecutionMode("safe"));
+  const controller = await createExecutionModeController({ settings });
+  assert.equal(controller.getMode(), "safe");
+  await controller.toggleFromUi();
+  assert.equal(controller.getMode(), "yolo");
   assert.equal(await getStoredExecutionMode(settings), "yolo");
+  await controller.setMode(toggleExecutionMode("yolo"));
+  assert.equal(controller.getMode(), "safe");
+  assert.equal(await getStoredExecutionMode(settings), "safe");
 });
