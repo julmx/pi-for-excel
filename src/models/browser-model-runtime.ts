@@ -489,11 +489,11 @@ function customProviderRegistrations(
 ): BrowserProviderRegistration[] {
   // A stale, user-added, or previously used external gateway must not be
   // registered or queried in a restricted build.
-  if (enterprisePolicy && (
-    !isOpenAiGatewayProvider(provider)
-    || !provider.models?.some((model) => isEnterpriseModelAllowed(enterprisePolicy, model))
-  )) return [];
-  const storedModels = provider.models ?? [];
+  const storedModels = (provider.models ?? []).filter((model) =>
+    !enterprisePolicy || isEnterpriseModelAllowed(enterprisePolicy, model));
+  if (enterprisePolicy && (!isOpenAiGatewayProvider(provider) || storedModels.length === 0)) {
+    return [];
+  }
   const modelsByProvider = new Map<string, BrowserProviderModelDefinition[]>();
 
   for (const model of storedModels) {
@@ -567,12 +567,29 @@ export class BrowserModelRuntime {
       },
     });
 
-    for (const provider of builtinProviders()) {
-      const browserProvider = provider.auth.apiKey
-        ? provider
-        : createBrowserAdapterProvider(provider);
-      this.models.setProvider(browserProvider);
-      this.builtinProviderIds.add(browserProvider.id);
+    if (this.enterprisePolicy) {
+      // A credential-less bootstrap entry keeps the UI usable until a gateway
+      // is configured, without registering or refreshing public providers.
+      // The agent's endpoint guard rejects this placeholder for LLM calls.
+      const placeholder = createRegisteredProvider({
+        id: "enterprise-bootstrap",
+        name: "Configure enterprise gateway",
+        api: "openai-completions",
+        baseUrl: this.enterprisePolicy.baseUrl,
+        models: [{ id: "configure-gateway" }],
+        modelsUrl: null,
+        resolveApiKey: () => Promise.resolve(undefined),
+      }, this.getProxyUrl, this.fetchFn, new AbortController().signal);
+      this.models.setProvider(placeholder);
+      this.builtinProviderIds.add(placeholder.id);
+    } else {
+      for (const provider of builtinProviders()) {
+        const browserProvider = provider.auth.apiKey
+          ? provider
+          : createBrowserAdapterProvider(provider);
+        this.models.setProvider(browserProvider);
+        this.builtinProviderIds.add(browserProvider.id);
+      }
     }
   }
 
