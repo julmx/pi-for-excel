@@ -28,6 +28,7 @@ export interface BuiltinsContext
     FilesCommandActions {
   getActiveAgent: ActiveAgentProvider;
   openModelSelector: () => void;
+  enterpriseMode?: boolean;
 }
 
 /** Register all built-in commands. Call once after runtime manager is ready. */
@@ -39,17 +40,17 @@ export function registerBuiltins(context: BuiltinsContext): void {
       openModelSelector: context.openModelSelector,
     }),
     ...createSettingsCommands(context),
-    ...createAddonsCommands(context),
-    ...createToolsCommands(context),
-    ...createSkillsCommands(context),
-    ...createFilesCommands(context),
-    ...createExperimentalCommands(),
-    ...createDebugCommands(),
+    ...(!context.enterpriseMode ? createAddonsCommands(context) : []),
+    ...(!context.enterpriseMode ? createToolsCommands(context) : []),
+    ...(!context.enterpriseMode ? createSkillsCommands(context) : []),
+    ...(!context.enterpriseMode ? createFilesCommands(context) : []),
+    ...(!context.enterpriseMode ? createExperimentalCommands() : []),
+    ...(!context.enterpriseMode ? createDebugCommands() : []),
     ...createClipboardCommands(context.getActiveAgent),
     ...createExportCommands(context.getActiveAgent),
     ...createSessionIdentityCommands(context),
     ...createHelpCommands(),
-    ...createExtensionsCommands(context),
+    ...(!context.enterpriseMode ? createExtensionsCommands(context) : []),
     ...createSessionLifecycleCommands(context),
     ...createCompactCommands(context.getActiveAgent),
   ];

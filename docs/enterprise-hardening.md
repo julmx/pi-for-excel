@@ -27,10 +27,19 @@ behavior.
 
 ## What the prototype currently restricts
 
-- **Agent tools:** Only reviewed, first-party Excel operations are exposed
-  to the agent. Python, terminal, arbitrary Office.js, MCP, web search,
-  external integrations, skills and extension tools are excluded from its
-  tool registry. Other runtime entry points still require an audit.
+- **Agent tools:** Only reviewed, first-party Excel operations are constructed
+  and exposed to the agent. Python, terminal, arbitrary Office.js, MCP, web
+  search, external integrations, skills and extension tools are excluded.
+  Other runtime entry points still require an audit.
+- **Extensions and local bridges:** Enterprise startup disables persisted
+  extension loading and installation/activation through the extension manager.
+  The extension, add-on, tools, skills, files, experimental and debug slash
+  commands are excluded. Local bridge discovery and the development background
+  verification bridge are not started in enterprise mode.
+- **Workbook confirmation remains configurable:** The existing Auto and
+  Confirm execution modes are both supported. The chosen mode is persisted;
+  neither per-edit approval nor automatic edits are forcibly selected by
+  the enterprise build.
 - **Agent model transport:** The main agent stream accepts only custom
   `openai-completions` gateways with the **exact approved base URL**.
   The request cannot silently fall back to a public model or user-configured
@@ -110,8 +119,9 @@ LLM or proxy if the corporate API or credential fails.
    Review token handling, XSS boundaries, logging, retention and data
    minimization, potentially replacing direct browser API keys with an
    enterprise-authenticated internal gateway.
-4. Require confirmation for workbook mutations and prevent stored settings
-   from silently switching back to automatic execution.
+4. Preserve both configurable execution modes. Validate that Confirm asks
+   before workbook mutations and Auto makes changes without per-edit prompts,
+   while maintaining workbook history/recovery and clear user control.
 5. Validate CORS and Office.js compatibility, the exact gateway protocol,
    capabilities of individual discovered models (especially tool calling),
    full CI checks, and network traces before allowing confidential data.

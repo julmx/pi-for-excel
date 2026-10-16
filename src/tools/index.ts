@@ -7,6 +7,7 @@
 
 import type { SpreadsheetHostKind } from "../host/index.js";
 import { createCoreTools, type AnyCoreTool } from "./registry.js";
+import { filterEnterpriseBuiltInTools } from "./enterprise-policy.js";
 import { selectOfficeCoupledToolForHost } from "./host-selection.js";
 import type { SkillReadCache } from "../skills/read-cache.js";
 import { createTmuxTool } from "./tmux.js";
@@ -36,6 +37,12 @@ export function createAllTools(options: CreateAllToolsOptions = {}): AnyCoreTool
     ...(options.getSessionId !== undefined ? { getSessionId: options.getSessionId } : {}),
     ...(options.skillReadCache !== undefined ? { readCache: options.skillReadCache } : {}),
   };
+
+  // Restrict the tool registry itself, not just the tools advertised to the
+  // agent. This avoids constructing the arbitrary-code and bridge tools.
+  if (import.meta.env?.VITE_PI_ENTERPRISE_MODE === "true") {
+    return filterEnterpriseBuiltInTools(createCoreTools({ hostKind, skills }));
+  }
 
   return [
     ...createCoreTools({
