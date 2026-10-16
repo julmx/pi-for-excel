@@ -43,7 +43,7 @@ function normalizeApprovedBaseUrl(raw: string): string {
   return url.href.endsWith("/") ? url.href.slice(0, -1) : url.href;
 }
 
-/** Throw when a restricted build has no complete approved endpoint and model list. */
+/** Throw when a restricted build has no complete approved endpoint. */
 export function parseEnterpriseModelPolicy(
   config: EnterpriseModelPolicyConfig,
 ): EnterpriseModelPolicy | null {
@@ -53,7 +53,7 @@ export function parseEnterpriseModelPolicy(
   return { baseUrl };
 }
 
-/** The build deliberately contains only endpoint and model names, never API keys. */
+/** The build deliberately contains only endpoint URL, never API keys. */
 export function readBuildEnterpriseModelPolicy(): EnterpriseModelPolicy | null {
   const env = import.meta.env;
   return parseEnterpriseModelPolicy({
