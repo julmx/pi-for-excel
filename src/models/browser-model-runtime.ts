@@ -232,6 +232,7 @@ function sanitizeCatalogEntry(
           id: model.id,
           name: model.name,
           reasoning: model.reasoning,
+          ...(model.thinkingLevelMap !== undefined ? { thinkingLevelMap: model.thinkingLevelMap } : {}),
           input: model.input,
           inputLimits: model.inputLimits,
           contextWindow: model.contextWindow,
@@ -470,6 +471,8 @@ function createRegisteredProvider(
             definition: {
               id: modelId,
               ...(template?.reasoning !== undefined ? { reasoning: template.reasoning } : {}),
+              ...(template?.id === modelId && template.thinkingLevelMap !== undefined
+                ? { thinkingLevelMap: template.thinkingLevelMap } : {}),
               ...(template?.input !== undefined ? { input: template.input } : {}),
               ...(template?.inputLimits !== undefined ? { inputLimits: template.inputLimits } : {}),
               ...(template?.contextWindow !== undefined ? { contextWindow: template.contextWindow } : {}),

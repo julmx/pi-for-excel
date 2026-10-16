@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ModelsStore, ModelsStoreEntry } from "@earendil-works/pi-ai";
 
 import { BrowserModelRuntime } from "../src/models/browser-model-runtime.ts";
+import { getThinkingLevelsForModel } from "../src/models/thinking-levels.ts";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CustomProvider } from "../src/storage/local/custom-providers-store.js";
 
@@ -150,6 +151,62 @@ void test("saveOpenAiGatewayConfig uses matched registry metadata by default", a
   assert.equal(storedModel?.compat, undefined);
 });
 
+void test("gateway reasoning opt-in survives discovery and restart and reaches the API payload", async () => {
+  const store = new MemoryCustomProvidersStore();
+  const saved = await saveOpenAiGatewayConfig(store, {
+    endpointUrl: "https://127.0.0.1:3141/__enterprise-api",
+    modelId: "Zai/GLM-5.2",
+    reasoning: true,
+    contextWindow: 262_144,
+    maxTokens: 16_000,
+  });
+  assert.equal((await listOpenAiGatewayConfigs(store))[0]?.reasoning, true);
+  const catalogs = new MemoryCatalogs();
+  const runtimeOptions = {
+    providerKeys: new MemoryProviderKeys(),
+    modelCatalogs: catalogs,
+    getProxyUrl: () => Promise.resolve(undefined),
+    fetchFn: () => Promise.resolve(Response.json({ data: [{ id: saved.modelId }] })),
+  };
+  const first = new BrowserModelRuntime(runtimeOptions);
+  await first.syncCustomProviders(await store.getAll());
+  assert.equal((await first.refresh({ allowNetwork: true, force: true })).errors.size, 0);
+  const restarted = new BrowserModelRuntime(runtimeOptions);
+  await restarted.syncCustomProviders(await store.getAll());
+  await restarted.refresh({ allowNetwork: false });
+  const model = restarted.models.getModel(saved.providerName, saved.modelId);
+  assert.ok(model);
+  assert.equal(model.contextWindow, 262_144);
+  assert.equal(model.maxTokens, 16_000);
+  assert.ok(getThinkingLevelsForModel(model).includes("high"));
+  assert.equal(model.thinkingLevelMap?.off, "none");
+  for (const [reasoning, expected] of [["high", "high"], ["off", "none"]] as const) {
+    let payloadChecked = false;
+    const stream = restarted.models.streamSimple(model, {
+      messages: [{ role: "user", content: "Synthetic test", timestamp: 0 }],
+    }, {
+      apiKey: "synthetic-test",
+      reasoning,
+      fetch: (_input, init) => {
+        const body = init?.body;
+        assert.ok(typeof body === "string");
+        const payload: unknown = JSON.parse(body);
+        assert.partialDeepStrictEqual(payload, { model: saved.modelId, reasoning_effort: expected, max_completion_tokens: 16_000 });
+        payloadChecked = true;
+        return Promise.resolve(new Response(
+          'data: {"choices":[{"index":0,"delta":{"content":"OK"},"finish_reason":null}]}\n\ndata: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { headers: { "content-type": "text/event-stream" } },
+        ));
+      },
+    });
+    assert.equal((await stream.result()).stopReason, "stop");
+    assert.equal(payloadChecked, true);
+  }
+  await saveOpenAiGatewayConfig(store, { ...saved, reasoning: false });
+  const disabled = await restartGatewayRuntime(store);
+  assert.deepEqual(getThinkingLevelsForModel(disabled.models.getModel(saved.providerName, saved.modelId) ?? null), ["off"]);
+});
+
 void test("saveOpenAiGatewayConfig lets explicit context override matched registry context", async () => {
   const store = new MemoryCustomProvidersStore();
 
@@ -214,6 +271,31 @@ void test("saveOpenAiGatewayConfig stores custom context window metadata", async
 
   const listed = await listOpenAiGatewayConfigs(store);
   assert.equal(listed[0]?.contextWindow, 131_072);
+});
+
+void test("gateway output limit is editable, listed, and validated before saving", async () => {
+  const store = new MemoryCustomProvidersStore();
+  const saved = await saveOpenAiGatewayConfig(store, {
+    endpointUrl: "https://gateway.example.com/v1",
+    modelId: "custom-model",
+    contextWindow: 262_144,
+    maxTokens: 16_000,
+  });
+  assert.equal(saved.maxTokens, 16_000);
+  assert.equal((await listOpenAiGatewayConfigs(store))[0]?.maxTokens, 16_000);
+  const edited = await saveOpenAiGatewayConfig(store, { ...saved, maxTokens: 8_000 });
+  assert.equal(edited.maxTokens, 8_000);
+  for (const maxTokens of [0, -1, 1.5, NaN, Infinity, 262_145, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(saveOpenAiGatewayConfig(store, { ...saved, maxTokens }), /Max output tokens/u);
+    assert.equal((await listOpenAiGatewayConfigs(store))[0]?.maxTokens, 8_000);
+  }
+  const defaults = await saveOpenAiGatewayConfig(store, {
+    id: saved.id,
+    endpointUrl: saved.endpointUrl,
+    modelId: saved.modelId,
+    contextWindow: saved.contextWindow,
+  });
+  assert.equal(defaults.maxTokens, 4_096);
 });
 
 void test("saveOpenAiGatewayConfig clamps maxTokens to the configured context window", async () => {

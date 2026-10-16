@@ -7,6 +7,7 @@ import { getAppStorage } from "../../storage/local/app-storage.js";
 
 import {
   DEFAULT_OPENAI_GATEWAY_CONTEXT_WINDOW,
+  DEFAULT_OPENAI_GATEWAY_MAX_TOKENS,
   deleteOpenAiGatewayConfig,
   listOpenAiGatewayConfigs,
   saveOpenAiGatewayConfig,
@@ -104,7 +105,11 @@ function createGatewayCard(args: {
   keyState.className = "pi-settings-gateway-item__meta";
   keyState.textContent = args.gateway.apiKey.length > 0 ? t("custom-gateway.gatewayApiKeyConfigured") : t("custom-gateway.gatewayApiKeyNone");
 
-  card.append(topRow, endpoint, model, contextWindow, keyState);
+  const maxTokens = document.createElement("p");
+  maxTokens.className = "pi-settings-gateway-item__meta";
+  maxTokens.textContent = t("custom-gateway.gatewayMaxTokens", { tokens: formatTokenCount(args.gateway.maxTokens) });
+
+  card.append(topRow, endpoint, model, contextWindow, maxTokens, keyState);
   return card;
 }
 
@@ -145,10 +150,33 @@ export async function buildCustomGatewaySection(
   contextWindowInput.step = "1";
   contextWindowInput.inputMode = "numeric";
 
+  const maxTokensInput = createConfigInput({
+    placeholder: String(DEFAULT_OPENAI_GATEWAY_MAX_TOKENS),
+    type: "number",
+  });
+  maxTokensInput.min = "1";
+  maxTokensInput.step = "1";
+  maxTokensInput.inputMode = "numeric";
+  maxTokensInput.setAttribute("aria-label", t("custom-gateway.configLabelMaxTokens"));
+
   const apiKeyInput = createConfigInput({
     placeholder: t("custom-gateway.apiKeyPlaceholder"),
     type: "password",
   });
+
+  const reasoningInput = document.createElement("select");
+  reasoningInput.className = "pi-overlay-input";
+  reasoningInput.setAttribute("aria-label", t("custom-gateway.reasoningLabel"));
+  for (const [value, label] of [
+    ["auto", t("custom-gateway.reasoningAuto")],
+    ["enabled", t("custom-gateway.reasoningEnabled")],
+    ["disabled", t("custom-gateway.reasoningDisabled")],
+  ] as const) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    reasoningInput.append(option);
+  }
 
   const errorText = document.createElement("p");
   errorText.className = "pi-overlay-hint pi-overlay-text-warning";
@@ -177,7 +205,11 @@ export async function buildCustomGatewaySection(
     createHint(
       t("custom-gateway.contextWindowHint"),
     ),
+    createConfigRow(t("custom-gateway.configLabelMaxTokens"), maxTokensInput),
+    createHint(t("custom-gateway.maxTokensHint")),
     createConfigRow(t("custom-gateway.configLabelApiKey"), apiKeyInput),
+    createConfigRow(t("custom-gateway.reasoningLabel"), reasoningInput),
+    createHint(t("custom-gateway.reasoningHint")),
     errorText,
     formActions,
   );
@@ -209,7 +241,9 @@ export async function buildCustomGatewaySection(
     endpointInput.value = "";
     modelInput.value = "";
     contextWindowInput.value = "";
+    maxTokensInput.value = "";
     apiKeyInput.value = "";
+    reasoningInput.value = "auto";
     cancelButton.hidden = true;
     saveButton.textContent = t("custom-gateway.saveGateway");
     setError(null);
@@ -221,7 +255,9 @@ export async function buildCustomGatewaySection(
     endpointInput.value = gateway.endpointUrl;
     modelInput.value = gateway.modelId;
     contextWindowInput.value = String(gateway.contextWindow);
+    maxTokensInput.value = String(gateway.maxTokens);
     apiKeyInput.value = gateway.apiKey;
+    reasoningInput.value = gateway.reasoning ? "enabled" : "disabled";
     cancelButton.hidden = false;
     saveButton.textContent = t("custom-gateway-settings.update-gateway");
     setError(null);
@@ -300,7 +336,9 @@ export async function buildCustomGatewaySection(
           endpointUrl: endpointInput.value,
           modelId: modelInput.value,
           apiKey: apiKeyInput.value,
+          ...(reasoningInput.value === "auto" ? {} : { reasoning: reasoningInput.value === "enabled" }),
           ...(contextWindow !== undefined ? { contextWindow } : {}),
+          ...(maxTokensInput.value.trim() ? { maxTokens: Number(maxTokensInput.value) } : {}),
         }, options.models);
 
         await reloadGateways();

@@ -30,6 +30,8 @@ jobs:
         run: npm run test:enterprise
       - name: Run model tests
         run: npm run test:models
+      - name: Run custom gateway and localization regression tests
+        run: node --test --experimental-strip-types --import ./scripts/register-test-ts-loader.mjs tests/custom-gateways.test.ts tests/i18n-locales.test.ts
       - name: Build regular release
         run: npm run build
       - name: Build restricted release
@@ -39,6 +41,15 @@ jobs:
         run: npm run build
       - name: Generate local Windows sideload manifest
         run: npm run manifest:enterprise:local
+      - name: Build restricted local relay release
+        env:
+          VITE_PI_ENTERPRISE_MODE: "true"
+          VITE_PI_ENTERPRISE_API_BASE_URL: https://127.0.0.1:3141/__enterprise-api
+        run: npm run build
+      - name: Install Chromium for gateway UI regression
+        run: npx playwright install chromium --with-deps
+      - name: Verify custom gateway settings in Chromium
+        run: node --test --test-concurrency=1 --experimental-strip-types --import ./scripts/register-test-ts-loader.mjs tests/browser/custom-gateway.browser-test.ts
 
   windows-launcher-syntax:
     runs-on: windows-latest

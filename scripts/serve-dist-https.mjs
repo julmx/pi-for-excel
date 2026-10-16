@@ -15,6 +15,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { buildEnterpriseContentSecurityPolicy } from "./enterprise-csp.mjs";
+import { createEnterpriseLocalRelay } from "./enterprise-local-relay.mjs";
 
 const HOST = process.env.HOST || "localhost";
 const PORT = Number.parseInt(process.env.PORT || "3141", 10);
@@ -23,6 +24,16 @@ const PORT = Number.parseInt(process.env.PORT || "3141", 10);
 // Production reverse proxies must supply an equivalent CSP response header.
 const enterpriseCsp = process.env.ENTERPRISE_MODE === "1"
   ? buildEnterpriseContentSecurityPolicy(process.env.ENTERPRISE_API_BASE_URL)
+  : null;
+
+if (process.env.ENTERPRISE_LOCAL_RELAY === "1" && !enterpriseCsp) {
+  throw new Error("The local relay requires restricted enterprise mode.");
+}
+const enterpriseRelay = process.env.ENTERPRISE_LOCAL_RELAY === "1"
+  ? createEnterpriseLocalRelay({
+    apiBaseUrl: process.env.ENTERPRISE_API_BASE_URL,
+    localOrigin: `https://127.0.0.1:${PORT}`,
+  })
   : null;
 
 const rootDir = path.resolve(process.cwd());
@@ -84,7 +95,7 @@ const server = https.createServer(
     key: fs.readFileSync(keyPath),
     cert: fs.readFileSync(certPath),
   },
-  (req, res) => {
+  async (req, res) => {
     try {
       const remote = req.socket?.remoteAddress;
       if (!isLoopbackAddress(remote)) {
@@ -94,6 +105,8 @@ const server = https.createServer(
         res.end("forbidden");
         return;
       }
+
+      if (enterpriseRelay && await enterpriseRelay(req, res)) return;
 
       const url = new URL(req.url || "/", `https://${HOST}:${PORT}`);
       let reqPath = url.pathname;

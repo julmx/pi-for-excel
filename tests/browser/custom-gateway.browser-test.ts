@@ -35,9 +35,18 @@ void test("custom gateway deletion persists only after overlay confirmation", as
     await page.getByPlaceholder("Gateway name (optional)").fill("Browser gateway");
     await page.getByPlaceholder("https://your-gateway.example.com/v1").fill("https://gateway.example.com/v1");
     await page.getByPlaceholder("model-id").fill("browser-model");
+    await page.getByPlaceholder("16384").fill("262144");
+    await page.getByRole("spinbutton", { name: "Max output tokens" }).fill("16000");
+    await page.getByRole("combobox", { name: "Reasoning support" }).selectOption("enabled");
     await page.getByRole("button", { name: "Save gateway" }).click();
     const gateway = settings.getByText("Browser gateway", { exact: true });
     await gateway.waitFor({ state: "visible" });
+
+    await settings.getByRole("button", { name: "Edit", exact: true }).click();
+    assert.equal(await page.getByPlaceholder("16384").inputValue(), "262144");
+    assert.equal(await page.getByRole("spinbutton", { name: "Max output tokens" }).inputValue(), "16000");
+    assert.equal(await page.getByRole("combobox", { name: "Reasoning support" }).inputValue(), "enabled");
+    await settings.getByRole("button", { name: "Cancel", exact: true }).click();
 
     await settings.getByRole("button", { name: "Delete" }).click();
     const confirmation = page.locator("#pi-confirm-dialog-overlay");

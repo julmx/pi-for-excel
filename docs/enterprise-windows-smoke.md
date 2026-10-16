@@ -89,6 +89,30 @@ Notes:
 
 ## 4. Sideload into Excel for Windows
 
+### Optional fixed-destination local relay for APIs without CORS
+
+For a synthetic local test, use `-UseLocalRelay` with the launch script if
+the approved API does not accept browser CORS requests. This changes the
+transport: the loopback HTTPS server forwards only `GET /models` and
+`POST /chat/completions` to the configured HTTPS API. It does not follow
+redirects, accept user-supplied targets, forward cookies, or log credentials.
+POST requires the exact local Origin and JSON content type. The relay binds
+to IPv4 loopback, applies size/time limits and preserves streamed responses.
+
+```powershell
+.\scripts\start-enterprise-local.ps1 -ApiBaseUrl "https://api.example.invalid/llm/v1" -SkipInstall -UseLocalRelay
+```
+
+In the custom gateway settings, use the base URL
+`https://127.0.0.1:3141/__enterprise-api`, the approved model ID, and the
+runtime API credential. The restricted build is pinned to that local base
+URL; the server is independently pinned to the upstream API. Both must be
+started with the matching launch option. Existing direct-API configurations
+will no longer be selectable in this build. Stop and rebuild without
+`-UseLocalRelay` to return to the direct transport. No upstream API change or
+browser security exception is needed. This optional transport requires its
+own real Excel smoke test and does not establish confidential-data approval.
+
 Use the generated **`manifest.enterprise.local.xml`** file, not
 `manifest.prod.xml`.
 
@@ -123,6 +147,22 @@ controls or import the XML as Excel's legacy XML Expansion Pack.
 
 The model names may be visible without a working API if a saved catalogue
 exists; that alone does not prove the endpoint or CORS integration works.
+
+If the thinking selector offers only Off for a custom model, edit the gateway
+and set **Reasoning support** to **Enabled**, then save and select the model
+again. This opts into the OpenAI `reasoning_effort` request parameter; it does
+not establish that the gateway implements that parameter. Choose High for an
+initial synthetic test. Off sends `none` for an explicitly enabled unknown
+model. Automatic retains registered-model detection and defaults unknown
+models to reasoning disabled. Validate actual reasoning output with your API.
+
+The gateway form also exposes **Max context tokens** and **Max output tokens**.
+Set these to the limits of your actual API deployment (for example, 262144
+context and 16000 output tokens for a deployment configured with those limits).
+The output limit must be a positive integer no greater than the context limit.
+Leaving output blank uses matched registry metadata, or 4096 for an unknown
+model, clamped to the context limit. Saving an explicit value overrides that
+default and preserves it across discovery and restart.
 
 ## 6. Network and security validation
 
