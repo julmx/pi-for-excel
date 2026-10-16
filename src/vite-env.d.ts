@@ -11,6 +11,8 @@ interface ImportMetaEnv {
   readonly VITE_PI_ALLOWED_PROVIDERS?: string;
   /** Opt-in reviewed Excel-only agent tool list; not a complete security boundary. */
   readonly VITE_PI_ENTERPRISE_MODE?: string;
+  /** Approved HTTPS base URL for an internal OpenAI-compatible gateway (never a secret). */
+  readonly VITE_PI_ENTERPRISE_API_BASE_URL?: string;
   /** Set to "false" to preserve original image dimensions and encoded sizes. */
   readonly VITE_PI_AUTO_RESIZE_IMAGES?: string;
   /** Dev-only loopback URL for the background verification bridge, e.g. "https://localhost:3157". */

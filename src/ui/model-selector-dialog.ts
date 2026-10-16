@@ -20,7 +20,9 @@ import {
 } from "@earendil-works/pi-ai";
 
 import { t } from "../language/index.js";
+import { readBuildEnterpriseModelPolicy, isEnterpriseModelAllowed } from "../auth/enterprise-model-policy.js";
 import { getActiveProviders } from "../models/active-providers.js";
+
 import {
   orderModelsForSelector,
   subsequenceScore,
@@ -52,7 +54,8 @@ function collectModelItems(modelsRuntime: Models): ModelSelectorItem[] {
       items.push({ provider: provider.id, id: model.id, model });
     }
   }
-  return items;
+  const policy = readBuildEnterpriseModelPolicy();
+  return policy ? items.filter((item) => isEnterpriseModelAllowed(policy, item.model)) : items;
 }
 
 export function openModelSelectorDialog(options: ModelSelectorDialogOptions): void {

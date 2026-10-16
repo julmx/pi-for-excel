@@ -22,7 +22,7 @@ npm run test:context
 
 1. **Model/endpoint enforcement:** the user interface's provider filter is not a
    security boundary. Make provider selection and outbound model calls fail
-   closed for everything except the company-approved URL and model IDs.
+   closed for everything except the company-approved endpoint; all models it serves are permitted.
 2. **Network policy:** self-host the add-in using an enterprise-controlled
    origin and configure a strict Content-Security-Policy and egress controls.
    The upstream Vercel deployment and default CSP are not acceptable for this
@@ -44,3 +44,75 @@ npm run test:context
 **This change is a partial defense, not a security certification.** Do not
 use the fork with confidential workbooks until the remaining controls are
 implemented and validated by the organization.
+
+## Step 2: approved internal LLM endpoint (draft)
+
+In the enterprise build, configure an exact **HTTPS OpenAI-compatible base
+URL** ; all models exposed by that endpoint are allowed. The values below are
+examples, not a corporate endpoint:
+
+```bash
+VITE_PI_ENTERPRISE_MODE=true \
+VITE_PI_ENTERPRISE_API_BASE_URL=https://api.example.invalid/llm/v1 \
+npm run build
+```
+
+**Never put an API key in a VITE_ variable** (Vite embeds it in browser JS).
+Provision the credential through an approved runtime authentication mechanism.
+
+The enterprise build now:
+- refuses to initialize if its endpoint is missing;
+- validates selected model's API type, provider, full base URL at
+  the agent stream boundary, before forwarding the prompt;
+- avoids optional user-configured CORS proxies for those LLM calls;
+- filters the model selection dialog to models from the approved endpoint.
+
+The approved model must be configured as a **custom OpenAI-compatible gateway**
+with an identical base URL; no per-model allowlist is required. A previously selected public
+model will be refused, not silently substituted.
+
+**Important limitations:** This is not yet a global outbound network policy.
+Other fetch paths, model refresh/discovery, authentication, startup assets,
+extensions and non-agent model calls may still reach external hosts. The model
+selector is only a convenience; the stream check is the agent-call guard.
+The endpoint URL are visible in the built client and must not be
+treated as secret. Corporate API/browser CORS support still needs verification.
+Do not use confidential workbooks until a strict CSP, network egress policy,
+full call-path audit and Excel tests are complete.
+
+Suggested verification on synthetic data: `npm run check`,
+`npm run build`, `npm run test:context`, `npm run test:security`, and
+`node --test --experimental-strip-types --import ./scripts/register-test-ts-loader.mjs tests/enterprise-model-policy.test.ts`.
+
+## Approved model transport (second phase)
+
+Enterprise builds require one **non-secret** HTTPS API base URL:
+
+```bash
+VITE_PI_ENTERPRISE_MODE=true \
+VITE_PI_ENTERPRISE_API_BASE_URL=https://example.invalid/llm/v1 \
+npm run build
+```
+
+The URL must not contain credentials, a query or a fragment.
+Missing or malformed endpoint configuration fails at taskpane startup.
+
+Agent LLM requests are rejected unless they use the `openai-completions`
+protocol, a custom gateway provider, and the exact approved API base URL.
+**All model IDs exposed by this gateway are allowed**; new models do not
+require rebuilding an allowlist. No fallback to public LLM providers is
+allowed. The model chooser hides gateways pointing elsewhere.
+
+The approved agent transport bypasses the optional Pi CORS proxy and
+connects directly. The internal API must therefore allow the taskpane
+origin via CORS, or an independently secured internal gateway is needed.
+
+Configure the custom gateway and its credentials using the existing UI.
+Never put a credential in `VITE_*` variables: those values are embedded
+in the client JavaScript bundle.
+
+**Not ready for confidential workbooks:** startup model discovery, other
+network requests, remote code/assets, extensions and alternative model call
+paths still require auditing and network restrictions. An internal hosting
+origin, restrictive CSP, egress enforcement, Excel tests and traffic capture
+are required before deployment.
