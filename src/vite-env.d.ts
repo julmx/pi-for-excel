@@ -11,6 +11,10 @@ interface ImportMetaEnv {
   readonly VITE_PI_ALLOWED_PROVIDERS?: string;
   /** Opt-in reviewed Excel-only agent tool list; not a complete security boundary. */
   readonly VITE_PI_ENTERPRISE_MODE?: string;
+  /** Approved HTTPS base URL for an internal OpenAI-compatible gateway (never a secret). */
+  readonly VITE_PI_ENTERPRISE_API_BASE_URL?: string;
+  /** Comma-separated exact model IDs served by the enterprise gateway. */
+  readonly VITE_PI_ENTERPRISE_MODEL_IDS?: string;
   /** Approved HTTPS OpenAI-compatible API base URL; not a credential. */
   readonly VITE_PI_ENTERPRISE_API_BASE_URL?: string;
   /** Comma-separated model IDs allowed in restricted builds. */
