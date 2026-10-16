@@ -3,6 +3,7 @@
  */
 
 import { t, initLanguage, getLanguage } from "../language/index.js";
+import { readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 
 import type { ModelRefreshOwner } from "../models/model-refresh-owner.js";
 import { getAppStorage } from "../storage/local/app-storage.js";
@@ -36,6 +37,7 @@ async function testLocalHttpsProxy(proxyUrl: string): Promise<boolean> {
 
 export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Promise<void> {
   const { VISIBLE_PROVIDERS, buildProviderRow } = await import("../ui/provider-login.js");
+  const enterpriseMode = readBuildEnterpriseModelPolicy() !== null;
 
   // Make OAuth flows usable even before the user can access /settings.
   try {
@@ -104,12 +106,14 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
     providerSectionTitle.textContent = t("welcome.select_provider");
 
     const providerList = createElement("div", "pi-welcome-providers");
+    providerList.hidden = enterpriseMode;
 
     const customGatewayButton = createElement("button", "pi-welcome-custom-gateway");
     customGatewayButton.type = "button";
     customGatewayButton.textContent = t("welcome.custom_gateway");
 
     const proxyToggle = createElement("button", "pi-welcome-proxy-toggle");
+    proxyToggle.hidden = enterpriseMode;
     proxyToggle.type = "button";
     const proxyToggleClosedLabel = DEFAULT_PROXY_IS_REMOTE
       ? t("welcome.proxy.toggle_show_remote")
@@ -289,7 +293,7 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
 
     const expandedRef: { current: HTMLElement | null } = { current: null };
 
-    for (const provider of VISIBLE_PROVIDERS) {
+    for (const provider of enterpriseMode ? [] : VISIBLE_PROVIDERS) {
       const row = buildProviderRow(provider, {
         isActive: false,
         expandedRef,
