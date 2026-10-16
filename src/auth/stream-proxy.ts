@@ -28,6 +28,7 @@ import { isDebugEnabled } from "../debug/debug.js";
 import { selectToolBundle, type ToolBundleId } from "../context/tool-disclosure.js";
 import { modelRecencyScore } from "../models/model-ordering.js";
 import { OPENAI_GATEWAY_PROVIDER_PREFIX } from "./custom-gateways.js";
+import { assertEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "./enterprise-model-policy.js";
 import {
   createPrefixFingerprint,
   type PrefixChangeReason,
@@ -566,6 +567,11 @@ export function createOfficeStreamFn(
   isRuntimeProvider?: (providerId: string) => boolean,
 ): OfficeStreamFn {
   return async (model: Model<Api>, context: TranscriptContext, options?: StreamOptions) => {
+    // Validate before context processing, any proxy lookup, or network transport.
+    const enterprisePolicy = readBuildEnterpriseModelPolicy();
+    if (enterprisePolicy) {
+      assertEnterpriseModelAllowed(enterprisePolicy, model);
+    }
     const continuation = isToolContinuation(context.messages);
     const replayedContext: Context = {
       systemPrompt: getCurrentSystemPrompt(context.messages),
@@ -585,6 +591,12 @@ export function createOfficeStreamFn(
       toolSelection.bundleId,
     );
     const effectiveOptions = withPayloadHook(options, callRecord.call, callRecord.captureSnapshot);
+
+    // Enterprise calls must go directly to the specifically approved API.
+    // No user-configurable CORS proxy can silently receive prompts or keys.
+    if (enterprisePolicy) {
+      return modelsRuntime.streamSimple(normalizedModel, context, effectiveOptions);
+    }
 
     const proxyUrl = await getProxyUrl();
     const needsCodexBridge = requiresCodexWebSocketBridge(normalizedModel);
