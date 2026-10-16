@@ -1,0 +1,39 @@
+name: Enterprise hardening checks
+
+on:
+  push:
+    branches:
+      - "feature/enterprise-*"
+  pull_request:
+    branches:
+      - "feature/enterprise-*"
+
+permissions:
+  contents: read
+
+jobs:
+  enterprise:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint and typecheck
+        run: npm run check
+      - name: Run enterprise policy tests
+        run: npm run test:enterprise
+      - name: Run model tests
+        run: npm run test:models
+      - name: Build regular release
+        run: npm run build
+      - name: Build restricted release
+        env:
+          VITE_PI_ENTERPRISE_MODE: "true"
+          VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
+        run: npm run build
