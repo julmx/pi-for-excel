@@ -16,6 +16,7 @@ import { getAppStorage } from "../storage/local/app-storage.js";
 import type { SessionData } from "../storage/local/types.js";
 
 import { createOfficeStreamFn } from "../auth/stream-proxy.js";
+import { readBuildEnterpriseModelPolicy, isEnterpriseModelAllowed } from "../auth/enterprise-model-policy.js";
 import { readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 import {
   DEFAULT_PROXY_URL,
@@ -220,6 +221,8 @@ export async function initTaskpane(opts: {
   autoResizeImages: boolean;
 }): Promise<void> {
   const { appEl, errorRoot, autoResizeImages } = opts;
+  // Validate enterprise settings before storage, authentication, or model discovery.
+  const enterprisePolicy = readBuildEnterpriseModelPolicy();
 
   // A restricted build must fail during initialization if policy is incomplete.
   readBuildEnterpriseModelPolicy();
@@ -294,7 +297,11 @@ export async function initTaskpane(opts: {
     warn: (message, error) => console.warn(message, error),
   });
   modelRefreshOwner.subscribe((snapshot) => {
-    setActiveProviders(new Set(snapshot.availableProviders));
+    setActiveProviders(new Set(enterprisePolicy
+      ? snapshot.availableProviders.filter((providerId) =>
+          modelRuntime.models.getModels(providerId).some((model) =>
+            isEnterpriseModelAllowed(enterprisePolicy, model)))
+      : snapshot.availableProviders));
     if (snapshot.providerErrors.length > 0) {
       console.warn("[models] Some provider catalogues could not be refreshed:", snapshot.providerErrors);
     }
