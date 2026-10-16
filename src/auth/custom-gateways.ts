@@ -29,6 +29,7 @@ export interface OpenAiGatewayConfig {
   apiKey: string;
   providerName: string;
   contextWindow: number;
+  reasoning: boolean;
 }
 
 export interface SaveOpenAiGatewayInput {
@@ -38,6 +39,7 @@ export interface SaveOpenAiGatewayInput {
   modelId: string;
   apiKey?: string;
   contextWindow?: number;
+  reasoning?: boolean;
 }
 
 export interface CustomProviderRuntimeInfo {
@@ -186,6 +188,7 @@ function providerToGatewayConfig(provider: CustomProvider): OpenAiGatewayConfig 
     apiKey: normalizeOptionalString(provider.apiKey),
     providerName,
     contextWindow: normalizeGatewayContextWindow(model.contextWindow),
+    reasoning: model.reasoning === true,
   };
 }
 
@@ -195,6 +198,7 @@ function createGatewayModel(args: {
   providerName: string;
   contextWindow: number;
   registryModel?: Model<Api>;
+  reasoning?: boolean;
 }): Model<"openai-completions"> {
   const registryModel = args.registryModel;
   const maxTokens = Math.min(
@@ -208,10 +212,10 @@ function createGatewayModel(args: {
     api: "openai-completions",
     provider: args.providerName,
     baseUrl: args.endpointUrl,
-    reasoning: registryModel?.reasoning ?? false,
+    reasoning: args.reasoning ?? registryModel?.reasoning ?? false,
     ...(registryModel?.thinkingLevelMap !== undefined
       ? { thinkingLevelMap: registryModel.thinkingLevelMap }
-      : {}),
+      : args.reasoning === true ? { thinkingLevelMap: { off: "none" } } : {}),
     input: registryModel?.input ?? ["text"],
     ...(registryModel?.inputLimits !== undefined
       ? { inputLimits: registryModel.inputLimits }
@@ -321,6 +325,7 @@ export async function saveOpenAiGatewayConfig(
         providerName,
         contextWindow,
         ...(registryModel !== undefined ? { registryModel } : {}),
+        ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
       }),
     ],
   };
@@ -338,6 +343,7 @@ export async function saveOpenAiGatewayConfig(
     apiKey,
     providerName,
     contextWindow,
+    reasoning: provider.models?.[0]?.reasoning === true,
   };
 }
 

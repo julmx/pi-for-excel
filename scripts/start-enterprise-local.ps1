@@ -5,7 +5,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ApiBaseUrl,
 
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+
+    [switch]$UseLocalRelay
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,19 +63,25 @@ Certificates stay on your machine and are ignored by Git.
     # Endpoint only, not a secret. NEVER place the corporate API key in VITE_*.
     $env:VITE_PI_ENTERPRISE_MODE = "true"
     $env:VITE_PI_ENTERPRISE_API_BASE_URL = $ApiBaseUrl.TrimEnd("/")
+    if ($UseLocalRelay) {
+        $env:VITE_PI_ENTERPRISE_API_BASE_URL = "https://127.0.0.1:3141/__enterprise-api"
+    }
     Invoke-Checked -Executable "npm.cmd" -Arguments @("run", "build")
 
     Invoke-Checked -Executable "node" -Arguments @("scripts/generate-enterprise-local-manifest.mjs")
 
-    # These must match the build-time URL; the HTTPS server applies the CSP.
+    # Direct mode uses the upstream URL in both build and server policy.
+    # Relay mode pins the build to loopback and the server to the upstream API.
     $env:ENTERPRISE_MODE = "1"
-    $env:ENTERPRISE_API_BASE_URL = $env:VITE_PI_ENTERPRISE_API_BASE_URL
+    $env:ENTERPRISE_API_BASE_URL = $ApiBaseUrl.TrimEnd("/")
+    $env:ENTERPRISE_LOCAL_RELAY = if ($UseLocalRelay) { "1" } else { "0" }
     $env:PORT = "3141"
 
     Write-Host ""
     Write-Host "Local enterprise Pi for Excel is ready for a synthetic-data test."
     Write-Host "Manifest: $root\manifest.enterprise.local.xml"
     Write-Host "Taskpane: https://127.0.0.1:3141/src/taskpane.html"
+    Write-Host "Gateway base URL for settings: $env:VITE_PI_ENTERPRISE_API_BASE_URL"
     Write-Host "Keep this terminal open and load the manifest via Excel > Add-ins."
     Write-Host "Press Ctrl+C here to stop the server."
     Write-Host ""

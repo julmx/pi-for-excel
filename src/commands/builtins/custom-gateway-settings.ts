@@ -150,6 +150,20 @@ export async function buildCustomGatewaySection(
     type: "password",
   });
 
+  const reasoningInput = document.createElement("select");
+  reasoningInput.className = "pi-overlay-input";
+  reasoningInput.setAttribute("aria-label", t("custom-gateway.reasoningLabel"));
+  for (const [value, label] of [
+    ["auto", t("custom-gateway.reasoningAuto")],
+    ["enabled", t("custom-gateway.reasoningEnabled")],
+    ["disabled", t("custom-gateway.reasoningDisabled")],
+  ] as const) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    reasoningInput.append(option);
+  }
+
   const errorText = document.createElement("p");
   errorText.className = "pi-overlay-hint pi-overlay-text-warning";
   errorText.hidden = true;
@@ -178,6 +192,8 @@ export async function buildCustomGatewaySection(
       t("custom-gateway.contextWindowHint"),
     ),
     createConfigRow(t("custom-gateway.configLabelApiKey"), apiKeyInput),
+    createConfigRow(t("custom-gateway.reasoningLabel"), reasoningInput),
+    createHint(t("custom-gateway.reasoningHint")),
     errorText,
     formActions,
   );
@@ -210,6 +226,7 @@ export async function buildCustomGatewaySection(
     modelInput.value = "";
     contextWindowInput.value = "";
     apiKeyInput.value = "";
+    reasoningInput.value = "auto";
     cancelButton.hidden = true;
     saveButton.textContent = t("custom-gateway.saveGateway");
     setError(null);
@@ -222,6 +239,7 @@ export async function buildCustomGatewaySection(
     modelInput.value = gateway.modelId;
     contextWindowInput.value = String(gateway.contextWindow);
     apiKeyInput.value = gateway.apiKey;
+    reasoningInput.value = gateway.reasoning ? "enabled" : "disabled";
     cancelButton.hidden = false;
     saveButton.textContent = t("custom-gateway-settings.update-gateway");
     setError(null);
@@ -300,6 +318,7 @@ export async function buildCustomGatewaySection(
           endpointUrl: endpointInput.value,
           modelId: modelInput.value,
           apiKey: apiKeyInput.value,
+          ...(reasoningInput.value === "auto" ? {} : { reasoning: reasoningInput.value === "enabled" }),
           ...(contextWindow !== undefined ? { contextWindow } : {}),
         }, options.models);
 
