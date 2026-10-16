@@ -14,9 +14,16 @@
 import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
+import { buildEnterpriseContentSecurityPolicy } from "./enterprise-csp.mjs";
 
 const HOST = process.env.HOST || "localhost";
 const PORT = Number.parseInt(process.env.PORT || "3141", 10);
+
+// For restricted local smoke tests, require a separate serving-time policy.
+// Production reverse proxies must supply an equivalent CSP response header.
+const enterpriseCsp = process.env.ENTERPRISE_MODE === "1"
+  ? buildEnterpriseContentSecurityPolicy(process.env.ENTERPRISE_API_BASE_URL)
+  : null;
 
 const rootDir = path.resolve(process.cwd());
 const distDir = path.join(rootDir, "dist");
@@ -99,6 +106,12 @@ const server = https.createServer(
         console.log(`[serve-dist-https] ${req.method || "GET"} ${reqPath} -> 404`);
         res.end("not found");
         return;
+      }
+
+      if (enterpriseCsp) {
+        res.setHeader("Content-Security-Policy", enterpriseCsp);
+        res.setHeader("Referrer-Policy", "no-referrer");
+        res.setHeader("X-Content-Type-Options", "nosniff");
       }
 
       const ext = path.extname(filePath).toLowerCase();
