@@ -16,6 +16,7 @@ import { getAppStorage } from "../storage/local/app-storage.js";
 import type { SessionData } from "../storage/local/types.js";
 
 import { createOfficeStreamFn } from "../auth/stream-proxy.js";
+import { readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 import {
   DEFAULT_PROXY_URL,
   PROXY_HELPER_DOCS_URL,
@@ -219,6 +220,9 @@ export async function initTaskpane(opts: {
   autoResizeImages: boolean;
 }): Promise<void> {
   const { appEl, errorRoot, autoResizeImages } = opts;
+
+  // A restricted build must fail during initialization if policy is incomplete.
+  readBuildEnterpriseModelPolicy();
 
   const changeTracker = new ChangeTracker();
   const spreadsheetHost = getCurrentSpreadsheetHost();
