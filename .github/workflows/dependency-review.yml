@@ -1,4 +1,7 @@
-name: Dependency Review
+# GitHub's dependency-review-action requires the Dependency Graph feature.
+# This fork currently does not have that capability enabled. Audit the entire
+# resolved npm tree on every PR and push until Dependency Graph is available.
+name: Dependency Audit
 
 on:
   pull_request:
@@ -10,29 +13,23 @@ permissions:
   contents: read
 
 jobs:
-  dependency-review:
+  npm-audit:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Dependency review (pull request)
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
         with:
-          fail-on-severity: high
-          fail-on-scopes: runtime
+          node-version: 22
+          cache: npm
 
-      - name: Dependency review (push diff)
-        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
-        uses: actions/dependency-review-action@v5
-        with:
-          fail-on-severity: high
-          fail-on-scopes: runtime
-          base-ref: ${{ github.event.before }}
-          head-ref: ${{ github.sha }}
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-fund
 
-      - name: Skip dependency review for initial branch push
-        if: github.event_name == 'push' && github.event.before == '0000000000000000000000000000000000000000'
-        run: echo 'No previous commit for diff; skipping dependency review.'
+      - name: Audit all dependencies (including development tools)
+        run: npm audit --audit-level=moderate
+
+      - name: Audit production dependencies separately
+        run: npm audit --omit=dev --audit-level=moderate
