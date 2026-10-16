@@ -428,6 +428,7 @@ export async function initTaskpane(opts: {
     sessionId: string;
     workbookId: string | null;
   }): Promise<string[]> => {
+    if (enterprisePolicy) return [];
     const configuredIntegrationIds = await resolveConfiguredIntegrationIds({
       settings,
       sessionId: args.sessionId,
@@ -440,6 +441,7 @@ export async function initTaskpane(opts: {
   };
 
   const resolveAvailableSkills = async () => {
+    if (enterprisePolicy) return [];
     const bundledSkills = listAgentSkills();
 
     let mergedSkills = bundledSkills;
@@ -684,6 +686,7 @@ export async function initTaskpane(opts: {
     refreshRuntimeTools: refreshCapabilitiesForAllRuntimes,
     refreshRuntimeModels: () => modelRefreshOwner.refresh(true),
     reservedToolNames,
+    disabled: enterprisePolicy !== null,
     afterInjectAgentContext: async () => {
       const activeRuntime = getActiveRuntime();
       if (!activeRuntime) {
@@ -752,7 +755,7 @@ export async function initTaskpane(opts: {
   // Start bridge health probe now that refreshCapabilitiesForAllRuntimes is available.
   // The first runtime prompt waits for this promise, preventing a first-turn
   // gap where Local Services has not been populated yet.
-  localServicesReady = probeLocalServices().then(
+  localServicesReady = enterprisePolicy ? Promise.resolve() : probeLocalServices().then(
     (result) => {
       localServicesSnapshot = result;
       void refreshCapabilitiesForAllRuntimes();
@@ -1643,6 +1646,7 @@ export async function initTaskpane(opts: {
   };
 
   registerBuiltins({
+    enterpriseMode: enterprisePolicy !== null,
     getActiveAgent,
     openModelSelector,
     renameActiveSession: async (title: string) => {
@@ -2014,7 +2018,7 @@ export async function initTaskpane(opts: {
   };
 
   // ── Dev-only background verification bridge ──
-  const backgroundVerificationBridge = maybeStartBackgroundVerificationBridge({
+  const backgroundVerificationBridge = enterprisePolicy ? null : maybeStartBackgroundVerificationBridge({
     sidebar,
     getWorkbookContext: resolveWorkbookContext,
     getActiveRuntime,
