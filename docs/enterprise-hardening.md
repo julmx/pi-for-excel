@@ -1,5 +1,8 @@
 # Enterprise deployment hardening (work in progress)
 
+For a Windows Excel local proof of concept, follow the
+[Windows local HTTPS smoke-test guide](./enterprise-windows-smoke.md).
+
 > **Do not use confidential workbooks yet.** This is an opt-in technical
 > prototype, not a reviewed or certified enterprise security control.
 

@@ -37,3 +37,26 @@ jobs:
           VITE_PI_ENTERPRISE_MODE: "true"
           VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
         run: npm run build
+      - name: Generate local Windows sideload manifest
+        run: npm run manifest:enterprise:local
+
+  windows-launcher-syntax:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Parse PowerShell launcher without executing it
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "scripts/start-enterprise-local.ps1",
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+          Write-Host "Enterprise Windows launcher syntax is valid."

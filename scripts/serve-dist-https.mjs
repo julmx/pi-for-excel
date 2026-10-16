@@ -136,9 +136,11 @@ const server = https.createServer(
   },
 );
 
-// Bind to all interfaces so both IPv4 (127.0.0.1) and IPv6 (::1) localhost
-// resolutions work in different Office webviews.
-server.listen(PORT, () => {
+// Enterprise smoke tests use an IPv4 loopback-only manifest and socket.
+// Other development flows retain the previous listener behavior.
+const listenHost = enterpriseCsp ? "127.0.0.1" : undefined;
+server.listen(PORT, listenHost, () => {
   console.log(`[serve-dist-https] Serving ${distDir}`);
-  console.log(`[serve-dist-https] https://${HOST}:${PORT}/src/taskpane.html`);
+  const displayHost = listenHost ?? HOST;
+  console.log(`[serve-dist-https] https://${displayHost}:${PORT}/src/taskpane.html`);
 });

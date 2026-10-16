@@ -36,3 +36,6 @@ manifest.dev.xml
 
 # Session exports
 pi-session-*
+
+# Generated enterprise sideload manifest (contains local test configuration)
+manifest.enterprise.local.xml

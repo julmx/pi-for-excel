@@ -39,25 +39,30 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
   const { VISIBLE_PROVIDERS, buildProviderRow } = await import("../ui/provider-login.js");
   const enterpriseMode = readBuildEnterpriseModelPolicy() !== null;
 
-  // Make OAuth flows usable even before the user can access /settings.
-  try {
-    const storage = getAppStorage();
-    const proxySettings = await readTaskpaneProxySettings(storage.settings);
-    const currentUrl = resolveConfiguredProxyUrl(proxySettings.url);
+  // Enterprise builds never probe or auto-enable an optional local CORS
+  // proxy. Direct access to the approved corporate API is required.
+  if (!enterpriseMode) {
+    // Make OAuth flows usable even before the user can access /settings.
+    try {
+      const storage = getAppStorage();
+      const proxySettings = await readTaskpaneProxySettings(storage.settings);
+      const currentUrl = resolveConfiguredProxyUrl(proxySettings.url);
 
-    if (proxySettings.url === null) {
-      await storage.settings.set("proxy.url", currentUrl);
-    }
-
-    // Auto-enable if a local HTTPS proxy is actually reachable.
-    if (!proxySettings.enabled) {
-      const ok = await testLocalHttpsProxy(currentUrl);
-      if (ok) {
-        await storage.settings.set("proxy.enabled", true);
+      if (proxySettings.url === null) {
+        await storage.settings.set("proxy.url", currentUrl);
       }
+
+      // Auto-enable if a local HTTPS proxy is actually reachable.
+      if (!proxySettings.enabled) {
+        const ok = await testLocalHttpsProxy(currentUrl);
+        if (ok) {
+          await storage.settings.set("proxy.enabled", true);
+        }
+      }
+    } catch {
+      // ignore — welcome overlay should still show
     }
-  } catch {
-    // ignore — welcome overlay should still show
+
   }
 
   closeOverlayById(WELCOME_LOGIN_OVERLAY_ID);
@@ -289,7 +294,7 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
       void saveProxyUi();
     });
 
-    void hydrateProxyUi();
+    if (!enterpriseMode) void hydrateProxyUi();
 
     const expandedRef: { current: HTMLElement | null } = { current: null };
 
