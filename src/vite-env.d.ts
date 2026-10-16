@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_PI_DEFAULT_PROXY_URL?: string;
   /** Comma-separated provider ids to show in the connect UI, e.g. "openai,deepseek". */
   readonly VITE_PI_ALLOWED_PROVIDERS?: string;
+  /** Opt-in reviewed Excel-only agent tool list; not a complete security boundary. */
+  readonly VITE_PI_ENTERPRISE_MODE?: string;
   /** Set to "false" to preserve original image dimensions and encoded sizes. */
   readonly VITE_PI_AUTO_RESIZE_IMAGES?: string;
   /** Dev-only loopback URL for the background verification bridge, e.g. "https://localhost:3157". */

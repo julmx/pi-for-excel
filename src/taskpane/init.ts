@@ -38,6 +38,7 @@ import { runCompactCommand } from "../commands/builtins/export.js";
 import { getFilesWorkspace } from "../files/workspace.js";
 import { ConnectionManager } from "../connections/manager.js";
 import { createAllTools } from "../tools/index.js";
+import { filterEnterpriseBuiltInTools } from "../tools/enterprise-policy.js";
 import { collectRequiredConnectionIds } from "../tools/connection-requirements.js";
 import {
   applyToolOutputTruncation,
@@ -841,11 +842,16 @@ export async function initTaskpane(opts: {
       const extensionTools = extensionManager.getRegisteredTools();
       const extensionToolRevision = extensionManager.getToolRevision();
 
-      const runtimeTools = normalizeRuntimeTools([
-        ...gatedCoreTools,
-        ...createToolsForIntegrations(activeIntegrationIds),
-        ...extensionTools,
-      ]);
+      // Enterprise builds must not advertise external or arbitrary-code tools.
+      // This only restricts the agent tool surface; see docs/enterprise-hardening.md.
+      const enterpriseMode = import.meta.env.VITE_PI_ENTERPRISE_MODE === "true";
+      const runtimeTools = normalizeRuntimeTools(enterpriseMode
+        ? filterEnterpriseBuiltInTools(gatedCoreTools)
+        : [
+            ...gatedCoreTools,
+            ...createToolsForIntegrations(activeIntegrationIds),
+            ...extensionTools,
+          ]);
 
       const requiredConnectionIds = collectRequiredConnectionIds(runtimeTools);
 
