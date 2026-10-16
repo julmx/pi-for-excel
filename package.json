@@ -66,6 +66,7 @@
     "@types/node": "^26.5.0",
     "@types/office-js": "^1.0.608",
     "eslint": "^10.10.0",
+    "fs-extra": "^11.3.2",
     "office-addin-manifest": "^2.1.2",
     "oxlint": "1.82.0",
     "playwright": "1.63.0",
