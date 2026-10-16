@@ -17,6 +17,11 @@ import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 
 import { originalFetch } from "../auth/cors-proxy.js";
 import { isOpenAiGatewayProvider } from "../auth/custom-gateways.js";
+import {
+  isEnterpriseModelAllowed,
+  readBuildEnterpriseModelPolicy,
+  type EnterpriseModelPolicy,
+} from "../auth/enterprise-model-policy.js";
 import { normalizeProxyUrl } from "../auth/proxy-validation.js";
 import type { CustomProvider } from "../storage/local/custom-providers-store.js";
 import {
@@ -76,6 +81,8 @@ export interface CreateBrowserModelRuntimeOptions {
   modelCatalogs: ModelsStore;
   getProxyUrl: () => Promise<string | undefined>;
   fetchFn?: typeof globalThis.fetch;
+  /** Injectable for tests; deployed builds read their build-time endpoint policy. */
+  enterprisePolicy?: EnterpriseModelPolicy;
 }
 
 interface DynamicProviderCatalogSpec {
@@ -476,7 +483,16 @@ function createRegisteredProvider(
   });
 }
 
-function customProviderRegistrations(provider: CustomProvider): BrowserProviderRegistration[] {
+function customProviderRegistrations(
+  provider: CustomProvider,
+  enterprisePolicy: EnterpriseModelPolicy | null,
+): BrowserProviderRegistration[] {
+  // A stale, user-added, or previously used external gateway must not be
+  // registered or queried in a restricted build.
+  if (enterprisePolicy && (
+    !isOpenAiGatewayProvider(provider)
+    || !provider.models?.some((model) => isEnterpriseModelAllowed(enterprisePolicy, model))
+  )) return [];
   const storedModels = provider.models ?? [];
   const modelsByProvider = new Map<string, BrowserProviderModelDefinition[]>();
 
@@ -512,7 +528,9 @@ function customProviderRegistrations(provider: CustomProvider): BrowserProviderR
     api: providerApi,
     baseUrl: provider.baseUrl,
     models,
-    ...(isOpenAiGatewayProvider(provider) ? { modelsUrl: null } : {}),
+    // Manual gateways intentionally skip discovery in regular builds. Enterprise
+    // gateways discover the approved API catalogue at <baseUrl>/models.
+    ...(isOpenAiGatewayProvider(provider) && !enterprisePolicy ? { modelsUrl: null } : {}),
     resolveApiKey: () => Promise.resolve(provider.apiKey),
     allowKeyless: !provider.apiKey,
   }));
@@ -525,6 +543,7 @@ export class BrowserModelRuntime {
   private readonly modelCatalogs: BrowserModelCatalogsStore;
   private readonly getProxyUrl: () => Promise<string | undefined>;
   private readonly fetchFn: typeof globalThis.fetch;
+  private readonly enterprisePolicy: EnterpriseModelPolicy | null;
   private readonly builtinProviderIds = new Set<string>();
   private readonly customProviderIds = new Set<string>();
   private readonly extensionProviderOwners = new Map<string, string>();
@@ -532,8 +551,13 @@ export class BrowserModelRuntime {
 
   constructor(options: CreateBrowserModelRuntimeOptions) {
     this.modelCatalogs = new BrowserModelCatalogsStore(options.modelCatalogs);
-    this.getProxyUrl = options.getProxyUrl;
-    this.fetchFn = options.fetchFn ?? originalFetch ?? globalThis.fetch;
+    this.enterprisePolicy = options.enterprisePolicy ?? readBuildEnterpriseModelPolicy();
+    // Never forward enterprise model discovery through a user-controlled proxy.
+    this.getProxyUrl = this.enterprisePolicy
+      ? () => Promise.resolve(undefined)
+      : options.getProxyUrl;
+    // Use the protected fetch interceptor in enterprise mode, not originalFetch.
+    this.fetchFn = options.fetchFn ?? (this.enterprisePolicy ? globalThis.fetch : originalFetch ?? globalThis.fetch);
     this.models = createModels({
       credentials: new ProviderCredentialsStore(options.providerKeys),
       modelsStore: this.modelCatalogs,
@@ -575,7 +599,7 @@ export class BrowserModelRuntime {
     const nextIds = new Set<string>();
 
     for (const customProvider of customProviders) {
-      for (const registration of customProviderRegistrations(customProvider)) {
+      for (const registration of customProviderRegistrations(customProvider, this.enterprisePolicy)) {
         if (this.builtinProviderIds.has(registration.id)) {
           throw new Error(`Custom provider id conflicts with built-in provider: ${registration.id}`);
         }
@@ -609,6 +633,9 @@ export class BrowserModelRuntime {
   }
 
   registerExtensionProvider(ownerId: string, registration: BrowserProviderRegistration): void {
+    if (this.enterprisePolicy) {
+      throw new Error("Extension-provided models are disabled in enterprise mode.");
+    }
     const providerId = normalizeNonEmpty(registration.id, "Provider id");
     if (this.builtinProviderIds.has(providerId) || this.customProviderIds.has(providerId)) {
       throw new Error(`Provider id is reserved: ${providerId}`);
