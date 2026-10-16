@@ -39,6 +39,9 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
   const { VISIBLE_PROVIDERS, buildProviderRow } = await import("../ui/provider-login.js");
   const enterpriseMode = readBuildEnterpriseModelPolicy() !== null;
 
+  // Enterprise builds never probe or auto-enable an optional local CORS
+  // proxy. Direct access to the approved corporate API is required.
+  if (!enterpriseMode) {
   // Make OAuth flows usable even before the user can access /settings.
   try {
     const storage = getAppStorage();
@@ -58,6 +61,8 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
     }
   } catch {
     // ignore — welcome overlay should still show
+  }
+
   }
 
   closeOverlayById(WELCOME_LOGIN_OVERLAY_ID);
@@ -289,7 +294,7 @@ export async function showWelcomeLogin(modelRefreshOwner: ModelRefreshOwner): Pr
       void saveProxyUi();
     });
 
-    void hydrateProxyUi();
+    if (!enterpriseMode) void hydrateProxyUi();
 
     const expandedRef: { current: HTMLElement | null } = { current: null };
 
