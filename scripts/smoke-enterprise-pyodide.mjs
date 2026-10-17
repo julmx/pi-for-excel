@@ -62,7 +62,7 @@ console.log("Enterprise Pyodide smoke test passed (interpreter + pandas + NumPy)
  * double-underscore JS callback names are mangled inside Python classes.
  */
 const workerSource = await readFile("src/python/enterprise-python-worker.ts", "utf8");
-const bootstrap = workerSource.match(/await py\.runPythonAsync\(\`([\s\S]*?)\`\);\s*try \{/u)?.[1];
+const bootstrap = workerSource.match(/await py\.runPythonAsync\(`([\s\S]*?)`\);\s*try \{/u)?.[1];
 assert.ok(bootstrap, "Could not locate the Python Excel API bootstrap in the worker");
 
 const requests = [];
