@@ -26,10 +26,10 @@ export function resolveEnterpriseRelayTarget(apiBaseUrl, path, method) {
     throw new Error("Enterprise relay requires an approved HTTPS API base URL.");
   }
 
-  return new URL(
-    `${upstream.pathname.replace(/\/$/u, "")}/${suffix}`,
-    upstream.origin,
-  );
+  // Assign the pathname on the already validated URL. Constructing a new
+  // URL from a path beginning with // could otherwise change its origin.
+  upstream.pathname = `${upstream.pathname.replace(/\/$/u, "")}/${suffix}`;
+  return upstream;
 }
 
 export function handleEnterpriseApiRelay(req, res, apiBaseUrl, path) {
@@ -60,6 +60,7 @@ export function handleEnterpriseApiRelay(req, res, apiBaseUrl, path) {
     headers,
     timeout: 180_000,
   }, (response) => {
+    console.log(`[enterprise-api-relay] ${req.method} ${path} -> ${response.statusCode || 502}`);
     if (res.destroyed) {
       response.destroy();
       return;
