@@ -70,3 +70,19 @@ jobs:
             exit 1
           }
           Write-Host "Enterprise Windows launcher syntax is valid."
+      - name: Setup Node.js for Windows Python smoke
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build enterprise Web Worker on Windows
+        env:
+          VITE_PI_ENTERPRISE_MODE: "true"
+          VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
+        run: npm run build
+      - name: Install Chromium for Windows Worker smoke
+        run: npx playwright install chromium
+      - name: Run Python Excel Worker in Windows Chromium
+        run: node scripts/smoke-enterprise-python-browser.mjs
