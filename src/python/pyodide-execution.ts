@@ -5,8 +5,8 @@
  * ordinary Pi uses its existing provider, while the enterprise Worker loads
  * only bundled Pyodide and exposes allowlisted Excel RPCs.
  */
-export interface PyodideExecutor {
-  runPythonAsync(code: string): Promise<unknown>;
+export interface PyodideExecutor<T> {
+  runPythonAsync(code: string): Promise<T>;
   globals: { delete(name: string): void };
 }
 
@@ -17,8 +17,8 @@ export interface PythonExecutionOutput {
   error?: string;
 }
 
-export async function executePyodideCode(
-  py: PyodideExecutor,
+export async function executePyodideCode<T>(
+  py: PyodideExecutor<T>,
   code: string,
   stringifyUnknownResult = false,
 ): Promise<PythonExecutionOutput> {
