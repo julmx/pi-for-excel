@@ -30,15 +30,19 @@ export interface EnterpriseExcelBridgeOptions {
   newToolCallId: () => string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+type RpcInput = object | string | number | boolean | null | undefined;
+
+function isRecord(value: RpcInput): value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const proto: unknown = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
-function parseRequest(raw: unknown): EnterpriseExcelOperation {
+function parseRequest(raw: RpcInput): EnterpriseExcelOperation {
   if (!isRecord(raw) || typeof raw.id !== "string" || raw.id.length === 0
-    || typeof raw.tool !== "string" || raw.tool.length === 0 || !isRecord(raw.params)) {
+    || typeof raw.tool !== "string" || raw.tool.length === 0
+    || (typeof raw.params !== "object" && raw.params !== null)
+    || !isRecord(raw.params)) {
     throw new Error("Invalid Excel bridge request.");
   }
 
@@ -53,7 +57,7 @@ function parseRequest(raw: unknown): EnterpriseExcelOperation {
  * attach this handler to the already coordinated workbook runtime.
  */
 export function createEnterpriseExcelBridge(options: EnterpriseExcelBridgeOptions): {
-  handle: (raw: unknown, signal?: AbortSignal) => Promise<EnterpriseExcelOperationResponse>;
+  handle: (raw: RpcInput, signal?: AbortSignal) => Promise<EnterpriseExcelOperationResponse>;
 } {
   const permitted = filterEnterpriseBuiltInTools(options.tools);
   const byName = new Map(permitted.map((tool) => [tool.name, tool]));
