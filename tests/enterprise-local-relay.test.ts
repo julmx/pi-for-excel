@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getEnterpriseLocalRelayUrl } from "../src/auth/enterprise-fetch-policy.ts";
+import { getEnterpriseLocalRelayUrl, getEnterpriseStreamBaseUrl } from "../src/auth/enterprise-fetch-policy.ts";
 import { parseEnterpriseModelPolicy } from "../src/auth/enterprise-model-policy.ts";
 
 const policy = parseEnterpriseModelPolicy({
@@ -31,5 +31,36 @@ void test("never relay other gateways, different paths, or credential-bearing UR
     "https://127.0.0.1:3141/src/taskpane.html",
   ]) {
     assert.equal(getEnterpriseLocalRelayUrl(policy, uri, origin), null, uri);
+  }
+});
+
+void test("SDK streaming uses the same-origin approved relay rather than an intercepted fetch", () => {
+  assert.equal(
+    getEnterpriseStreamBaseUrl(policy, "https://company.example.invalid/llm/v1", origin),
+    origin + "/__enterprise_api",
+  );
+  assert.equal(
+    getEnterpriseStreamBaseUrl(policy, "https://company.example.invalid/llm/v1/", origin),
+    origin + "/__enterprise_api",
+  );
+});
+
+void test("SDK streaming relay refuses unapproved models and non-local origins", () => {
+  for (const base of [
+    "https://attacker.invalid/llm/v1",
+    "https://company.example.invalid/llm/v2",
+    "http://company.example.invalid/llm/v1",
+    "https://user:password@company.example.invalid/llm/v1",
+    "https://company.example.invalid/llm/v1?token=secret",
+  ]) {
+    assert.throws(() => getEnterpriseStreamBaseUrl(policy, base, origin));
+  }
+  for (const pane of [
+    "https://public.example.invalid",
+    "https://localhost:3141",
+    "http://127.0.0.1:3141",
+    "https://127.0.0.1:9999",
+  ]) {
+    assert.throws(() => getEnterpriseStreamBaseUrl(policy, policy.baseUrl, pane));
   }
 });
