@@ -5,7 +5,10 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ApiBaseUrl,
 
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+
+    # Explicit opt-in if Office WebView2 cannot call the corporate API via CORS.
+    [switch]$UseLocalApiRelay
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +64,7 @@ Certificates stay on your machine and are ignored by Git.
     # Endpoint only, not a secret. NEVER place the corporate API key in VITE_*.
     $env:VITE_PI_ENTERPRISE_MODE = "true"
     $env:VITE_PI_ENTERPRISE_API_BASE_URL = $ApiBaseUrl.TrimEnd("/")
+    $env:VITE_PI_ENTERPRISE_LOCAL_API_RELAY = if ($UseLocalApiRelay) { "true" } else { "false" }
     Invoke-Checked -Executable "npm.cmd" -Arguments @("run", "build")
 
     Invoke-Checked -Executable "node" -Arguments @("scripts/generate-enterprise-local-manifest.mjs")
@@ -68,12 +72,15 @@ Certificates stay on your machine and are ignored by Git.
     # These must match the build-time URL; the HTTPS server applies the CSP.
     $env:ENTERPRISE_MODE = "1"
     $env:ENTERPRISE_API_BASE_URL = $env:VITE_PI_ENTERPRISE_API_BASE_URL
+    $env:ENTERPRISE_LOCAL_API_RELAY = if ($UseLocalApiRelay) { "1" } else { "0" }
     $env:PORT = "3141"
 
     Write-Host ""
     Write-Host "Local enterprise Pi for Excel is ready for a synthetic-data test."
     Write-Host "Manifest: $root\manifest.enterprise.local.xml"
     Write-Host "Taskpane: https://127.0.0.1:3141/src/taskpane.html"
+    Write-Host "Approved API: $($env:ENTERPRISE_API_BASE_URL)"
+    Write-Host "Local API relay enabled: $($UseLocalApiRelay.IsPresent)"
     Write-Host "Keep this terminal open and load the manifest via Excel > Add-ins."
     Write-Host "Press Ctrl+C here to stop the server."
     Write-Host ""
