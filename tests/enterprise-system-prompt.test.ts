@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { buildSystemPrompt } from "../src/prompt/system-prompt.ts";
-import { createAllTools } from "../src/tools/index.ts";
 import { filterEnterpriseBuiltInTools } from "../src/tools/enterprise-policy.ts";
 import { CORE_TOOL_CAPABILITIES } from "../src/tools/capabilities.ts";
 
