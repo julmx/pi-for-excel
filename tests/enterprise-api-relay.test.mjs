@@ -27,6 +27,15 @@ void test("relay cannot be used to select arbitrary destinations or routes", () 
   assert.equal(resolveEnterpriseRelayTarget(base, "/__enterprise_api/models", "POST"), null);
 });
 
+void test("unusual approved API paths cannot rewrite the upstream origin", () => {
+  const target = resolveEnterpriseRelayTarget(
+    "https://company.example.invalid//other-domain",
+    "/__enterprise_api/models",
+    "GET",
+  );
+  assert.equal(target?.origin, "https://company.example.invalid");
+});
+
 void test("relay requires HTTPS upstream without embedded secrets", () => {
   for (const invalid of [
     "http://company.example.invalid/v1",
