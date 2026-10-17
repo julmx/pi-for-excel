@@ -7,7 +7,8 @@ import type { EnterpriseExcelOperation, EnterpriseExcelOperationResponse } from 
 interface RunMessage { type: "run"; id: string; code: string }
 interface ExcelCallMessage { type: "excel-call"; id: string; callId: string; request: EnterpriseExcelOperation }
 interface FinishedMessage { type: "done"; id: string; ok: boolean; resultJson?: string; error?: string }
-type WorkerMessage = ExcelCallMessage | FinishedMessage;
+interface StageMessage { type: "stage"; id: string; stage: string }
+type WorkerMessage = ExcelCallMessage | FinishedMessage | StageMessage;
 
 export interface EnterprisePythonResult {
   ok: boolean;
@@ -26,6 +27,7 @@ export function runEnterprisePython(
     const worker = new Worker(new URL("./enterprise-python-worker.ts", import.meta.url), { type: "module" });
     const run: RunMessage = { type: "run", id: crypto.randomUUID(), code };
     let done = false;
+    let lastStage = "worker startup";
     const timeout = setTimeout(() => finish({ ok: false, error: "Python timed out." }), 120_000);
     const abort = () => finish({ ok: false, error: "Aborted" });
 
@@ -39,11 +41,27 @@ export function runEnterprisePython(
     }
 
     worker.addEventListener("error", (event) => {
-      finish({ ok: false, error: `Python worker failed: ${event.message}` });
+      const description = event instanceof ErrorEvent
+        ? event.message || "No error details supplied by Excel WebView2"
+        : "No error details supplied by Excel WebView2";
+      const source = event instanceof ErrorEvent && event.filename
+        ? ` in ${new URL(event.filename).pathname}:${event.lineno}`
+        : "";
+      finish({
+        ok: false,
+        error: `Python Worker failed during ${lastStage}: ${description}${source}. Check the local server logs for any failed asset requests.`,
+      });
+    });
+    worker.addEventListener("messageerror", () => {
+      finish({ ok: false, error: `Python Worker message could not be decoded during ${lastStage}.` });
     });
     worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
       const message = event.data;
       if (message.id !== run.id || done) return;
+      if (message.type === "stage") {
+        lastStage = message.stage;
+        return;
+      }
       if (message.type === "done") {
         finish({
           ok: message.ok,
