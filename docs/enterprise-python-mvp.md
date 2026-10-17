@@ -80,6 +80,39 @@ old sessions. It does not relax endpoint validation.
 If random-looking text you pasted into a chat was an API key, revoke and
 rotate the key; a chat message is not the secure credential input.
 
+## If LLM requests show "Connection error" (Windows WebView2)
+
+First verify the configured gateway matches the `-ApiBaseUrl` used to build.
+A generic connection failure can be caused by CORS, DNS/TLS or gateway network
+policy. The `GET /src/taskpane.html → 200` lines only verify local hosting;
+they do **not** prove the enterprise API received any traffic.
+
+If the gateway rejects cross-origin browser requests, enable the optional
+**same-origin local API relay**. The HTTPS server on 127.0.0.1:3141 forwards
+only `GET /models` and `POST /chat/completions` to the one configured
+approved HTTPS endpoint, with normal TLS certificate validation. It does not
+start the legacy port 3003 proxy or offer arbitrary URL forwarding:
+
+```powershell
+.\scripts\start-enterprise-local.ps1 -ApiBaseUrl "https://your-approved-api.example/v1" -SkipInstall -UseLocalApiRelay
+```
+
+Restart Excel completely and open a fresh chat. This **rebuilds the frontend**
+with same-origin request mapping; an earlier build will not be changed by
+toggling the server alone. The local Node.js process temporarily receives
+request bodies and runtime API credentials in memory so it can forward them
+to the configured gateway; it does not persist them or log them.
+
+If the result is `Enterprise API unreachable from local HTTPS server`, check
+the Node.js machine's outbound TLS reachability or its required enterprise
+network proxy. If the gateway responds with 401/403, examine its authentication
+or access policy. Do not disable certificate verification or paste API keys
+into logs/chat. If the relay works, that is useful evidence of a browser
+CORS issue, though not an exhaustive diagnosis.
+
+To keep using direct browser requests, launch without
+`-UseLocalApiRelay`.
+
 ## MVP tradeoffs
 
 - All Excel RPCs run through existing first-party tool implementations.
