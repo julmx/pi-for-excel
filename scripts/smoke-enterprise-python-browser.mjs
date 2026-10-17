@@ -11,11 +11,19 @@ import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { buildEnterpriseContentSecurityPolicy } from "./enterprise-csp.mjs";
 
 const dist = path.resolve("dist");
 const assets = await readdir(path.join(dist, "assets"));
 const workerFile = assets.find((name) => /^enterprise-python-worker-[\w-]+\.js$/u.test(name));
 assert.ok(workerFile, "Vite build did not emit the enterprise Python Worker.");
+
+// Use the deployed enterprise CSP, including the more restrictive policy
+// applied to the Worker script, rather than a permissive test-only policy.
+const enterpriseCsp = buildEnterpriseContentSecurityPolicy("https://api.example.invalid/llm/v1");
+const workerCsp = enterpriseCsp
+  .replace(/connect-src[^;]*/u, "connect-src 'self'")
+  .replace(/worker-src[^;]*/u, "worker-src 'none'");
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -33,8 +41,7 @@ const server = createServer(async (req, res) => {
     if (uri.pathname === "/__smoke.html") {
       res.writeHead(200, {
         "content-type": mime[".html"],
-        "content-security-policy":
-          "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self'",
+        "content-security-policy": enterpriseCsp,
       });
       res.end("<!doctype html><title>Enterprise Python integration test</title>");
       return;
@@ -46,7 +53,9 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, {
       "content-type": mime[path.extname(target)] ?? "application/octet-stream",
       "content-security-policy":
-        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self'",
+        /^\\/assets\\/enterprise-python-worker-[\\w-]+\\.js$/u.test(uri.pathname)
+          ? workerCsp
+          : enterpriseCsp,
     });
     res.end(data);
   } catch {
