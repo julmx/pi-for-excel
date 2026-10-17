@@ -29,3 +29,24 @@ export function isEnterpriseFetchUrlAllowed(
     return false;
   }
 }
+
+/**
+ * A build opt-in for the local Windows smoke test only.
+ * The approved remote URL remains validated before mapping to a same-origin
+ * endpoint. The local HTTPS server decides the fixed upstream destination.
+ */
+export function getEnterpriseLocalRelayUrl(
+  policy: EnterpriseModelPolicy,
+  requestedUrl: string,
+  taskpaneOrigin: string,
+): string | null {
+  if (!isEnterpriseFetchUrlAllowed(policy, requestedUrl, taskpaneOrigin)) return null;
+  const request = new URL(requestedUrl, taskpaneOrigin);
+  const api = new URL(policy.baseUrl);
+  if (request.origin !== api.origin) return null;
+
+  const basePath = api.pathname.replace(/\/$/u, "");
+  const suffix = request.pathname.slice(basePath.length + 1);
+  if (suffix !== "models" && suffix !== "chat/completions") return null;
+  return `${new URL(taskpaneOrigin).origin}/__enterprise_api/${suffix}`;
+}
