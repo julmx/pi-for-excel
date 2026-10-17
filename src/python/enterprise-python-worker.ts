@@ -15,7 +15,7 @@ declare const self: {
 
 interface Runtime {
   loadPackage(names: string[]): Promise<void>;
-  runPythonAsync(code: string): Promise<unknown>;
+  runPythonAsync(code: string): Promise<string | number | boolean | object | null | undefined>;
   globals: { set(key: string, value: object): void };
 }
 
