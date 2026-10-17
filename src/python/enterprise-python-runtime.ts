@@ -45,7 +45,7 @@ export function runEnterprisePython(
         ? event.message || "No error details supplied by Excel WebView2"
         : "No error details supplied by Excel WebView2";
       const source = event instanceof ErrorEvent && event.filename
-        ? ` in ${new URL(event.filename).pathname}:${event.lineno}`
+        ? ` in ${event.filename}:${event.lineno}`
         : "";
       finish({
         ok: false,
