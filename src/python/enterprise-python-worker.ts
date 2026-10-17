@@ -32,7 +32,7 @@ async function run(request: StartMessage): Promise<void> {
   });
   await py.loadPackage(["numpy", "pandas"]);
 
-  py.globals.set("__excel_rpc", async (tool: string, paramsJson: string): Promise<string> =>
+  py.globals.set("_excel_rpc", async (tool: string, paramsJson: string): Promise<string> =>
     new Promise<string>((resolve) => {
       const callId = `${request.id}-${++counter}`;
       pending.set(callId, resolve);
@@ -55,7 +55,7 @@ import sys as _excel_sys
 
 class _ExcelApi:
     async def call(self, tool, **params):
-        response = _excel_json.loads(await __excel_rpc(tool, _excel_json.dumps(params, default=str)))
+        response = _excel_json.loads(await _excel_rpc(tool, _excel_json.dumps(params, default=str)))
         if not response["ok"]:
             raise RuntimeError(response["error"])
         return response["result"]
