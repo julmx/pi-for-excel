@@ -79,17 +79,9 @@ excel = _ExcelApi()
 result = None
 `);
 
-  const code = request.code;
   try {
-    // Wrap scripts in an async function to allow normal `await excel.read(...)`
-    // while retaining ordinary Python import and assignment syntax.
-    py.globals.set("__agent_code", code);
-    await py.runPythonAsync(`
-import ast as _excel_ast
-_code_ast = _excel_ast.parse(__agent_code)
-# The agent's code runs at module scope so `result = ...` remains available.
-`);
-    const value = await py.runPythonAsync(code);
+    // Pyodide supports top-level await via runPythonAsync.
+    const value = await py.runPythonAsync(request.code);
     const output = await py.runPythonAsync(`
 import json as _excel_json
 _excel_result = result if result is not None else None
