@@ -41,6 +41,8 @@ jobs:
           VITE_PI_ENTERPRISE_MODE: "true"
           VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
         run: npm run build
+      - name: Smoke-test bundled Python, NumPy and pandas
+        run: node scripts/smoke-enterprise-pyodide.mjs
       - name: Generate local Windows sideload manifest
         run: npm run manifest:enterprise:local
 
