@@ -1,20 +1,21 @@
 # Enterprise Python + Excel: quick functional test (MVP)
 
-**Status:** experimental feature-branch build. Use disposable, synthetic data
+**Status:** experimental enterprise build on `main`. Use disposable, synthetic data
 only. Comprehensive confinement review and new quotas are intentionally deferred.
 
 ## Windows setup
 
-Checkout `feature/enterprise-python-functional-mvp` from
-`julmx/pi-for-excel` and use the existing local launcher:
+Use the current `main` branch of `julmx/pi-for-excel` (including PR #12 and
+PR #13) with the existing local launcher:
 
 ```powershell
 git fetch origin
-git switch --track origin/feature/enterprise-python-functional-mvp
+git switch main
+git pull --ff-only
 .\scripts\start-enterprise-local.ps1 -ApiBaseUrl "https://your-internal-api.example/v1"
 ```
 
-If already on this branch, use `git pull --ff-only` instead.
+If already on `main`, just run `git pull --ff-only` after fetching.
 The first enterprise build downloads a pinned Pyodide runtime plus
 NumPy/pandas wheels **during the build** into the gitignored
 `public/enterprise-pyodide` folder. The running Excel add-in serves those
@@ -40,6 +41,17 @@ write = await excel.write("PythonResult!A1", cleaned)
 result = {"rows": len(cleaned), "write": write["content"]}
 ```
 
+To verify that PR #13 does not report blocked writes as successful, run this
+second script while `Source!A1` still contains data:
+
+```python
+await excel.write("Source!A1", [["SHOULD_NOT_OVERWRITE"]])
+```
+
+Python should report an error indicating that the write was blocked, and
+`Source!A1` must remain unchanged. Do not pass `allow_overwrite=True` for this
+test. Run it only on a disposable workbook.
+
 Use only synthetic values. Other supported operations:
 `await excel.format("PythonResult!A1:C1", bold=True)`,
 `await excel.chart(action="create", source_range="PythonResult!A1:B3", chart_type="column")`,
@@ -60,7 +72,7 @@ LLM model**, not the Python Worker or port 3003.
 1. Save the workbook, stop the old PowerShell server, and close all Excel
    windows before restarting. A stale Excel WebView can keep an earlier build.
 2. Confirm your checkout with `git branch --show-current`. It must be
-   `feature/enterprise-python-functional-mvp`.
+   `main`, and `git pull --ff-only` must have completed.
 3. Run `start-enterprise-local.ps1` with the **same exact approved HTTPS
    base URL** already configured under **Settings → Custom OpenAI-compatible
    gateway**, including the URL path (typically `/v1`). Do not paste a key
