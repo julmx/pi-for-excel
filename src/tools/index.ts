@@ -14,6 +14,7 @@ import { createTmuxTool } from "./tmux.js";
 import { createPythonRunTool } from "./python-run.js";
 import { createLibreOfficeConvertTool } from "./libreoffice-convert.js";
 import { createPythonTransformRangeTool } from "./python-transform-range.js";
+import { createEnterprisePythonExcelTool } from "./enterprise-python-excel.js";
 import { createFilesTool } from "./files.js";
 import { createExecuteOfficeJsTool } from "./execute-office-js.js";
 import { createExecuteWpsJsTool } from "./execute-wps-js.js";
@@ -41,7 +42,10 @@ export function createAllTools(options: CreateAllToolsOptions = {}): AnyCoreTool
   // Restrict the tool registry itself, not just the tools advertised to the
   // agent. This avoids constructing the arbitrary-code and bridge tools.
   if (import.meta.env?.VITE_PI_ENTERPRISE_MODE === "true") {
-    return filterEnterpriseBuiltInTools(createCoreTools({ hostKind, skills }));
+    return [
+      ...filterEnterpriseBuiltInTools(createCoreTools({ hostKind, skills })),
+      ...(hostKind === "office" ? [createEnterprisePythonExcelTool(hostKind)] : []),
+    ];
   }
 
   return [
