@@ -15,6 +15,13 @@ Do not give generated Python a general Office.js object, JavaScript evaluator,
 native Windows interpreter, shell, network client, arbitrary package installer,
 or access to local OneDrive files.
 
+**Structured Excel tables:** The current enterprise allowlist can work with
+cell ranges, but it does not include a first-party tool for creating native
+Excel Table objects. Add a dedicated, parameter-validated table operation
+before advertising `excel.table(...)`. Do not fall back to arbitrary
+Office.js or silently claim Table object support. PivotTables are also not
+part of the initial structured tool surface.
+
 ## Architecture
 
 1. The agent calls a new `python_excel` tool, passing Python code and context.
@@ -59,7 +66,8 @@ Confirm mode.
 Bundle a pinned Pyodide distribution and the chosen packages locally. Add a
 Worker-host message protocol and Python-side `excel` library. Support
 read/write/formulas/sheet operations first, then formatting, charts and other
-structured tools through the same RPC interface. Adapt the enterprise CSP
+structured tools through the same RPC interface. Add a dedicated first-party
+Table object tool if native Excel Tables are required. Adapt the enterprise CSP
 for the Worker and its local WebAssembly resources while preserving
 restrictions on external destinations.
 
