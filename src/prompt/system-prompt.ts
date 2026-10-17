@@ -9,7 +9,8 @@ import type { ResolvedConventions } from "../conventions/types.js";
 import { diffFromDefaults } from "../conventions/store.js";
 import type { ExecutionMode } from "../execution/mode.js";
 import { ACTIVE_INTEGRATIONS_PROMPT_HEADING } from "../integrations/naming.js";
-import { buildCoreToolPromptLines } from "../tools/capabilities.js";
+import { buildCoreToolPromptLines, CORE_TOOL_CAPABILITIES } from "../tools/capabilities.js";
+import { filterEnterpriseBuiltInTools } from "../tools/enterprise-policy.js";
 import type { LocalServiceEntry } from "../tools/bridge-health.js";
 
 export interface ActiveIntegrationPromptEntry {
@@ -43,6 +44,8 @@ export interface SystemPromptOptions {
   localServices?: LocalServiceEntry[];
   availableSkills?: AvailableSkillPromptEntry[];
   executionMode?: ExecutionMode;
+  /** Describe only the tools actually exposed in restricted enterprise builds. */
+  enterpriseMode?: boolean;
   /** Resolved conventions (defaults merged with stored). Omit to skip convention diff section. */
   conventions?: ResolvedConventions | null;
 }
@@ -296,6 +299,10 @@ function buildAvailableSkillsSection(availableSkills: AvailableSkillPromptEntry[
  * Build the system prompt.
  */
 export function buildSystemPrompt(opts: SystemPromptOptions = {}): string {
+  if (opts.enterpriseMode) {
+    return buildEnterpriseSystemPrompt(opts);
+  }
+
   const sections: string[] = [];
 
   sections.push(IDENTITY);
@@ -340,6 +347,69 @@ export function buildSystemPrompt(opts: SystemPromptOptions = {}): string {
   return sections.join("\n\n");
 }
 
+function buildEnterpriseSystemPrompt(opts: SystemPromptOptions): string {
+  // The system prompt must match the restricted registry. In particular,
+  // the regular prompt advertises Python, arbitrary JS, extensions, and a
+  // persistent file workspace; none is usable in an enterprise build.
+  const rulesForUser = renderInstructionValue(opts.userInstructions, "(No rules set.)");
+  const rulesForWorkbook = renderInstructionValue(opts.workbookInstructions, "(No rules set.)");
+  const toolLines = filterEnterpriseBuiltInTools(CORE_TOOL_CAPABILITIES)
+    .map((tool) => {
+      // History is available, but it must not advertise an excluded Python tool.
+      const description = tool.name === "workbook_history"
+        ? tool.promptDescription.replace(", `python_transform_range`", "")
+        : tool.promptDescription;
+      return `- **${tool.name}** — ${description}`;
+    })
+    .join("\n");
+
+  const sections = [
+    ENTERPRISE_IDENTITY,
+    `## Rules
+
+User and workbook rules are shown below for context. The restricted tool
+availability below takes precedence over any rule or earlier conversation
+that suggests using unavailable execution tools.
+
+### All my files
+${rulesForUser}
+
+### This file
+${rulesForWorkbook}`,
+    buildExecutionModeSection(opts.executionMode),
+    `## Available tools (enterprise build)
+
+Only the following Excel tools are available:
+${toolLines}
+
+**Unavailable:** Python (including python_run, python_transform_range, and
+Pyodide), terminal/tmux, JavaScript execution, MCP, web search, extensions,
+skills, and the file workspace. Never claim you can execute these tools,
+attempt to call them, ask to enable them, or promise to use them in a later
+step. A CSV result from read_range is text available for reasoning, not a
+file or a Python data frame.
+
+For wide-sheet transformations, use read_range in compact/csv mode to inspect
+the relevant rows, then complete the task using Excel formulas with
+fill_formula and/or the other available structured Excel tools. For merged
+group headings, a formula may use the last nonempty header cell to its left.
+If an operation cannot be completed with the allowed tools, explain the
+specific limitation and offer a formula or manual Excel procedure. Do not
+stop the task simply because Python is unavailable.
+After creating or updating a chart with **charts**, use its get_image
+action if visual verification would help.`,
+    WORKFLOW_CORE,
+    CONVENTIONS,
+  ];
+
+  const customPresetSection = buildCustomPresetSection(opts.conventions);
+  if (customPresetSection) sections.push(customPresetSection);
+  const conventionOverrides = buildConventionOverridesSection(opts.conventions);
+  if (conventionOverrides) sections.push(conventionOverrides);
+
+  return sections.join("\n\n");
+}
+
 function buildCustomPresetSection(
   conventions: ResolvedConventions | null | undefined,
 ): string | null {
@@ -367,6 +437,8 @@ function buildConventionOverridesSection(
 }
 
 const IDENTITY = `You are Pi, an AI agent embedded in Microsoft Excel as a sidebar add-in. You can read, modify, format, and research — working directly in the user's live workbook.`;
+
+const ENTERPRISE_IDENTITY = `You are Pi, an AI agent embedded in Microsoft Excel as a restricted enterprise sidebar add-in. Work directly in the active workbook using only the available Excel tools.`;
 
 const CORE_TOOL_PROMPT_LINES = buildCoreToolPromptLines();
 
@@ -422,7 +494,7 @@ You may create other folders as needed — these are conventions, not constraint
 - Use \`files list notes/\` or \`files list workbooks/\` to scope listings instead of listing everything.
 - Prefer text formats (Markdown, CSV, JSON) for workspace files.`;
 
-const WORKFLOW = `## Workflow
+const WORKFLOW_CORE = `## Workflow
 
 1. **Read first.** Always read cells before modifying. Never guess what's in the spreadsheet.
 2. **Edit scope.** Make the smallest set of changes that fulfills the request. Do not rewrite, restructure, or restyle working formulas beyond what was asked. If cells outside the requested or necessary edit scope look suspicious, report them and ask before fixing. Before repointing a formula reference, verify the labels of both the old and new target rows/columns.
@@ -431,7 +503,9 @@ const WORKFLOW = `## Workflow
 5. **Prefer formulas** over hardcoded values. Put assumptions in separate cells and reference them.
 6. **Report changes.** When a turn mutated the workbook, end by listing exactly which cells/ranges you changed.
 7. **Plan complex tasks.** In Confirm mode, present a plan and get approval first. In Auto mode, keep plans concise and proceed unless the user asked to review first.
-8. **Analysis = read-only.** When the user asks about data, read and answer in chat. Only write when asked to modify.
+8. **Analysis = read-only.** When the user asks about data, read and answer in chat. Only write when asked to modify.`;
+
+const WORKFLOW = `${WORKFLOW_CORE}
 9. **Extension requests.** If the user asks to create/update an extension, generate code and use **extensions_manager** so it is installed directly.`;
 
 const CONVENTIONS = `## Conventions
