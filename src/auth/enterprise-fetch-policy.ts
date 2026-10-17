@@ -50,3 +50,32 @@ export function getEnterpriseLocalRelayUrl(
   if (suffix !== "models" && suffix !== "chat/completions") return null;
   return `${new URL(taskpaneOrigin).origin}/__enterprise_api/${suffix}`;
 }
+
+/**
+ * The Pi AI SDK may use its own HTTP transport rather than the taskpane's
+ * patched window.fetch. For a local smoke test, route streaming requests
+ * explicitly to the pinned same-origin server instead of relying on an
+ * unrelated global fetch interceptor.
+ *
+ * Callers MUST validate the original model against the enterprise model
+ * policy before changing its transport URL.
+ */
+export function getEnterpriseStreamBaseUrl(
+  policy: EnterpriseModelPolicy,
+  modelBaseUrl: string,
+  taskpaneOrigin: string,
+): string {
+  const approved = new URL(policy.baseUrl);
+  const supplied = new URL(modelBaseUrl);
+  const normalized = (url: URL): string => url.href.replace(/\/$/u, "");
+  if (normalized(supplied) !== normalized(approved)) {
+    throw new Error("Enterprise relay refused a model with an unapproved API base URL.");
+  }
+
+  const origin = new URL(taskpaneOrigin);
+  if (origin.protocol !== "https:" || origin.hostname !== "127.0.0.1" || origin.port !== "3141"
+      || origin.pathname !== "/" || origin.search || origin.hash || origin.username || origin.password) {
+    throw new Error("Local enterprise relay requires the HTTPS loopback taskpane origin.");
+  }
+  return `${origin.origin}/__enterprise_api`;
+}
