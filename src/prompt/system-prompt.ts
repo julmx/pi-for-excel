@@ -354,7 +354,13 @@ function buildEnterpriseSystemPrompt(opts: SystemPromptOptions): string {
   const rulesForUser = renderInstructionValue(opts.userInstructions, "(No rules set.)");
   const rulesForWorkbook = renderInstructionValue(opts.workbookInstructions, "(No rules set.)");
   const toolLines = filterEnterpriseBuiltInTools(CORE_TOOL_CAPABILITIES)
-    .map((tool) => `- **${tool.name}** — ${tool.promptDescription}`)
+    .map((tool) => {
+      // History is available, but it must not advertise an excluded Python tool.
+      const description = tool.name === "workbook_history"
+        ? tool.promptDescription.replace(", `python_transform_range`", "")
+        : tool.promptDescription;
+      return `- **${tool.name}** — ${description}`;
+    })
     .join("\n");
 
   const sections = [
