@@ -9,7 +9,15 @@ import path from "node:path";
 const VERSION = "0.27.7";
 const SOURCE = `https://cdn.jsdelivr.net/pyodide/v${VERSION}/full/`;
 const TARGET = path.resolve("public/enterprise-pyodide");
-const CORE = ["pyodide.mjs", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json"];
+// The Emscripten loader imports pyodide.asm.js at runtime. Omitting it
+// passes a Vite build but fails when Python first starts in Excel.
+const CORE = [
+  "pyodide.mjs",
+  "pyodide.asm.js",
+  "pyodide.asm.wasm",
+  "python_stdlib.zip",
+  "pyodide-lock.json",
+];
 
 async function download(name) {
   const file = path.join(TARGET, name);
