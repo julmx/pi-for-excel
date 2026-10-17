@@ -32,6 +32,10 @@ async function download(name) {
 
 if (process.env.VITE_PI_ENTERPRISE_MODE === "true") {
   await mkdir(TARGET, { recursive: true });
+  // Node smoke tests load Emscripten's .asm.js as CommonJS (it uses require
+  // and __dirname). Browsers ignore this package metadata entirely, and
+  // pyodide.mjs remains ESM by extension.
+  await writeFile(path.join(TARGET, "package.json"), '{ "type": "commonjs" }\n');
   for (const file of CORE) await download(file);
   const lock = JSON.parse(await readFile(path.join(TARGET, "pyodide-lock.json"), "utf8"));
   const selected = new Set();
