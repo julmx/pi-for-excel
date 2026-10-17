@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   assertEnterpriseModelAllowed,
+  findApprovedEnterpriseModel,
   isEnterpriseModelAllowed,
   parseEnterpriseModelPolicy,
 } from "../src/auth/enterprise-model-policy.ts";
@@ -62,4 +63,29 @@ void test("public providers, non-OpenAI APIs and alternate endpoints are blocked
     assert.equal(isEnterpriseModelAllowed(policy, model), false);
     assert.throws(() => assertEnterpriseModelAllowed(policy, model));
   }
+});
+
+void test("enterprise model selection prefers real gateway models over bootstrap and stale sessions", () => {
+  const policy = enterprisePolicy();
+  const models = [
+    { ...validModel, provider: "enterprise-bootstrap", id: "configure-gateway" },
+    { ...validModel, provider: "openai" },
+    { ...validModel, id: "another-internal-model" },
+  ];
+  assert.deepEqual(findApprovedEnterpriseModel(policy, models), models[2]);
+  assert.equal(findApprovedEnterpriseModel(policy, models.slice(0, 2)), null);
+});
+
+void test("enterprise policy errors explain invalid bootstrap and provider configuration", () => {
+  const policy = enterprisePolicy();
+  assert.throws(
+    () => assertEnterpriseModelAllowed(policy, {
+      ...validModel, provider: "enterprise-bootstrap", id: "configure-gateway",
+    }),
+    /Configure the approved Custom OpenAI-compatible gateway/u,
+  );
+  assert.throws(
+    () => assertEnterpriseModelAllowed(policy, { ...validModel, provider: "openai" }),
+    /model configuration mismatch/u,
+  );
 });
