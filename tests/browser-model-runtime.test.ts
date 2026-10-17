@@ -879,7 +879,7 @@ void test("OpenAI-completions SDK sends a rewritten enterprise stream to the loc
       },
     },
   );
-  await (await stream).result();
+  await stream.result();
   assert.equal(requestUrl, "https://127.0.0.1:3141/__enterprise_api/chat/completions");
   assert.equal(requestAuthorization, "Bearer synthetic-key");
 });
