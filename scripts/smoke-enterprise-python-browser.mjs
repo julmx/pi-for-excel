@@ -196,6 +196,64 @@ result = headers`,
   assert.equal(failed.ok, false);
   assert.match(failed.error ?? "", /ValueError.*synthetic exception/u, JSON.stringify(failed));
   assert.equal(failed.stdout?.trim(), "before failure");
+
+  // Regression for PR #13: a first-party Excel write can be refused without
+  // throwing in JavaScript. The bridge turns that into ok:false, and the real
+  // enterprise Python Worker must raise RuntimeError to Python callers.
+  // Unlike the ordinary successful-write mock above, exercise try/except.
+  const blocked = await page.evaluate((file) => new Promise((resolve, reject) => {
+    const worker = new Worker("/assets/" + file, { type: "module" });
+    const requests = [];
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error("Blocked-write Python integration test timed out."));
+    }, 120_000);
+    worker.addEventListener("error", (error) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(new Error(`Blocked-write Worker failed: ${error.message}`));
+    });
+    worker.addEventListener("message", (event) => {
+      const message = event.data;
+      if (message.type === "excel-call") {
+        requests.push(message.request);
+        worker.postMessage({
+          type: "excel-result",
+          callId: message.callId,
+          response: JSON.stringify({
+            id: message.callId,
+            ok: false,
+            error: "⛔ Write blocked — Source!A1 contains 1 non-empty cell(s).",
+          }),
+        });
+        return;
+      }
+      if (message.type !== "done") return;
+      clearTimeout(timeout);
+      worker.terminate();
+      resolve({ ...message, requests });
+    });
+    worker.postMessage({
+      type: "run",
+      id: "enterprise-python-blocked-write-smoke",
+      code: `result = {"status": None, "error": None}
+try:
+    await excel.write("Source!A1", [["SHOULD_NOT_OVERWRITE"]])
+    result["status"] = "NO_EXCEPTION"
+except RuntimeError as error:
+    result["status"] = "EXCEPTION_LEVEE"
+    result["error"] = str(error)`,
+    });
+  }), workerFile);
+  assert.equal(blocked.ok, true, JSON.stringify(blocked));
+  assert.deepEqual(JSON.parse(blocked.resultJson), {
+    status: "EXCEPTION_LEVEE",
+    error: "⛔ Write blocked — Source!A1 contains 1 non-empty cell(s).",
+  });
+  assert.equal(blocked.requests.length, 1);
+  assert.equal(blocked.requests[0].tool, "write_cells");
+  assert.equal(blocked.requests[0].params.start_cell, "Source!A1");
+  assert.deepEqual(blocked.requests[0].params.values, [["SHOULD_NOT_OVERWRITE"]]);
   assert.deepEqual(errors, []);
   console.log("Browser smoke passed: Python stdout/stderr, errors, Excel RPC and results.");
 } finally {
