@@ -20,17 +20,28 @@ interface Runtime {
 }
 
 const pending = new Map<string, ExcelCallback>();
+let activeRunId: string | null = null;
+
+function announceStage(id: string, stage: string): void {
+  self.postMessage({ type: "stage", id, stage });
+}
+
 let counter = 0;
 
 async function run(request: StartMessage): Promise<void> {
+  activeRunId = request.id;
+  announceStage(request.id, "loading the Pyodide module");
   const localLoaderPath = "/enterprise-pyodide/pyodide.mjs";
   const module = await import(/* @vite-ignore */ localLoaderPath) as {
     loadPyodide(options: { indexURL: string }): Promise<Runtime>;
   };
+  announceStage(request.id, "initializing WebAssembly");
   const py = await module.loadPyodide({
     indexURL: "/enterprise-pyodide/",
   });
+  announceStage(request.id, "loading pandas and NumPy");
   await py.loadPackage(["numpy", "pandas"]);
+  announceStage(request.id, "registering the Excel bridge");
 
   py.globals.set("_excel_rpc", async (tool: string, paramsJson: string): Promise<string> =>
     new Promise<string>((resolve) => {
@@ -85,6 +96,7 @@ result = None
 `);
 
   try {
+    announceStage(request.id, "running the Python script");
     // Pyodide supports top-level await via runPythonAsync.
     await py.runPythonAsync(request.code);
     const output = await py.runPythonAsync(`
@@ -93,6 +105,7 @@ _excel_result = result if result is not None else None
 _excel_json.dumps(_excel_result, default=str)
 `);
     if (typeof output !== "string") throw new Error("Python did not return a JSON string.");
+    announceStage(request.id, "returning Python results");
     self.postMessage({ type: "done", id: request.id, ok: true, resultJson: output });
   } catch (error) {
     self.postMessage({
@@ -103,6 +116,29 @@ _excel_json.dumps(_excel_result, default=str)
     });
   }
 }
+
+// Surface errors from asynchronously loaded runtime components in the same
+// request protocol. No Python code, spreadsheet values or credentials logged.
+self.addEventListener("unhandledrejection", (event) => {
+  if (!activeRunId) return;
+  const reason: unknown = event.reason;
+  self.postMessage({
+    type: "done",
+    id: activeRunId,
+    ok: false,
+    error: `Unhandled Python Worker rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
+  });
+});
+
+self.addEventListener("error", (event) => {
+  if (!activeRunId) return;
+  self.postMessage({
+    type: "done",
+    id: activeRunId,
+    ok: false,
+    error: `Python Worker runtime error: ${event.message || "no details"}`,
+  });
+});
 
 self.addEventListener("message", (event) => {
   const message = event.data;
