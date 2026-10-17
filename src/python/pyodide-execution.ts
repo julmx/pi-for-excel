@@ -51,6 +51,12 @@ result = None
       if (typeof stderr === "string" && stderr.length > 0) output.stderr = stderr;
     } catch { /* Keep the original execution error. */ }
 
+    // Pyodide's PythonError.message can be empty; its traceback is then
+    // printed to stderr. Preserve that diagnostic instead of returning "".
+    if (output.error === "") {
+      output.error = output.stderr?.trim() || "Python execution failed.";
+    }
+
     if (output.error === undefined) {
       try {
         const result = await py.runPythonAsync(stringifyUnknownResult
