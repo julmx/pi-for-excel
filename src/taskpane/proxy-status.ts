@@ -65,7 +65,16 @@ export async function checkProxyOnce(settings: SettingsReader): Promise<ProxySta
   return newState;
 }
 
-export function startProxyPolling(settings: SettingsReader): () => void {
+export function startProxyPolling(
+  settings: SettingsReader,
+  options: { enabled?: boolean } = {},
+): () => void {
+  // Enterprise calls the approved OpenAI-compatible API directly. Never probe
+  // an optional local helper (or show a misleading failure when CSP blocks it).
+  if (options.enabled === false) {
+    return () => {};
+  }
+
   void checkProxyOnce(settings);
 
   intervalId = setInterval(() => {
