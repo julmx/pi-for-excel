@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port 3141",
     "dev:portless": "portless pi-excel vite",
-    "build": "vite build",
+    "build": "node scripts/prepare-enterprise-pyodide.mjs && vite build",
     "preview": "vite preview",
     "proxy": "node scripts/cors-proxy-server.mjs",
     "proxy:https": "node scripts/cors-proxy-server.mjs --https",
