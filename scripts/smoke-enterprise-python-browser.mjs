@@ -138,6 +138,9 @@ try {
       type: "run",
       id: "enterprise-python-smoke",
       code: `import pandas as pd
+import sys
+print("Python stdout visible")
+print("Python stderr visible", file=sys.stderr)
 rows = await excel.read("Source!A1:C2")
 groups = pd.Series(rows[0]).replace("", None).ffill().tolist()
 headers = [f"{group} - {name}" for group, name in zip(groups, rows[1])]
@@ -153,6 +156,8 @@ result = headers`,
     "Group A - City",
     "Group B - Status",
   ]);
+  assert.equal(outcome.stdout?.trim(), "Python stdout visible");
+  assert.equal(outcome.stderr?.trim(), "Python stderr visible");
   assert.deepEqual(outcome.requests.map((entry) => entry.tool), [
     "read_range",
     "modify_structure",
@@ -163,8 +168,36 @@ result = headers`,
     "Group A - City",
     "Group B - Status",
   ]]);
+  // A second, independent Worker must also propagate Python exceptions and
+  // the print output that preceded them, without using the Excel bridge.
+  const failed = await page.evaluate((file) => new Promise((resolve, reject) => {
+    const worker = new Worker("/assets/" + file, { type: "module" });
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error("Python error propagation test timed out."));
+    }, 120_000);
+    worker.addEventListener("error", (error) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(new Error(`Worker error: ${error.message}`));
+    });
+    worker.addEventListener("message", (event) => {
+      if (event.data.type !== "done") return;
+      clearTimeout(timeout);
+      worker.terminate();
+      resolve(event.data);
+    });
+    worker.postMessage({
+      type: "run",
+      id: "enterprise-python-error-smoke",
+      code: 'print("before failure")\\nraise ValueError("synthetic exception")',
+    });
+  }), workerFile);
+  assert.equal(failed.ok, false);
+  assert.match(failed.error ?? "", /ValueError.*synthetic exception/u);
+  assert.equal(failed.stdout?.trim(), "before failure");
   assert.deepEqual(errors, []);
-  console.log("Browser smoke passed: built Worker, Pyodide, pandas, Excel RPC and results.");
+  console.log("Browser smoke passed: Python stdout/stderr, errors, Excel RPC and results.");
 } finally {
   await browser?.close();
   await new Promise((resolve) => server.close(resolve));
