@@ -111,3 +111,80 @@ void test("confirmation denial and cancellation prevent execution", async () => 
   assert.deepEqual(cancelled, { id: "2", ok: false, error: "Aborted" });
   assert.deepEqual(events, []);
 });
+
+function responseTool(name: string, text: string, details: Record<string, unknown>): AnyCoreTool {
+  return {
+    name,
+    label: name,
+    description: name,
+    parameters: Type.Object({}),
+    execute: () => Promise.resolve({
+      content: [{ type: "text", text }],
+      details,
+    }),
+  };
+}
+
+void test("blocked writes are reported as failures to Python", async () => {
+  const bridge = createEnterpriseExcelBridge({
+    tools: [responseTool("write_cells", "Write blocked — destination already contains values.", {
+      kind: "write_cells",
+      blocked: true,
+    })],
+    newToolCallId: () => "write",
+    approveMutation: () => Promise.resolve(),
+  });
+
+  const result = await bridge.handle({
+    id: "1",
+    tool: "write_cells",
+    params: { start_cell: "Sheet1!A1", values: [[42]] },
+  });
+  assert.deepEqual(result, {
+    id: "1",
+    ok: false,
+    error: "Write blocked — destination already contains values.",
+  });
+});
+
+void test("Excel tools that return error text do not silently succeed", async () => {
+  const tools = [
+    responseTool("read_range", "Error reading \"Missing!A1\": worksheet not found.", {}),
+    responseTool("write_cells", "Error writing cells: worksheet protected.", {
+      kind: "write_cells",
+      blocked: false,
+    }),
+    responseTool("modify_structure", "Error: A worksheet with this name already exists.", {
+      kind: "modify_structure",
+      action: "add_sheet",
+    }),
+  ];
+  const bridge = createEnterpriseExcelBridge({
+    tools,
+    newToolCallId: () => "call",
+    approveMutation: () => Promise.resolve(),
+  });
+
+  for (const tool of tools) {
+    const result = await bridge.handle({ id: tool.name, tool: tool.name, params: {} });
+    assert.equal(result.ok, false, tool.name);
+    if (!result.ok) assert.match(result.error, /^Error/u);
+  }
+});
+
+void test("successful Excel tool results still pass through unchanged", async () => {
+  const bridge = createEnterpriseExcelBridge({
+    tools: [responseTool("read_range", "**Sheet1!A1**: errors found in source data.", {
+      kind: "read_range_csv",
+      values: [["Error count", 2]],
+    })],
+    newToolCallId: () => "read",
+    approveMutation: () => Promise.resolve(),
+  });
+  const result = await bridge.handle({ id: "1", tool: "read_range", params: { range: "A1" } });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.deepEqual(result.result.details, {
+    kind: "read_range_csv",
+    values: [["Error count", 2]],
+  });
+});
