@@ -496,6 +496,7 @@ export async function initTaskpane(opts: {
         localServices: localServicesSnapshot,
         availableSkills,
         executionMode: getExecutionMode(),
+        enterpriseMode: enterprisePolicy !== null,
         conventions,
       });
     } catch {
@@ -505,6 +506,7 @@ export async function initTaskpane(opts: {
         localServices: localServicesSnapshot,
         availableSkills,
         executionMode: getExecutionMode(),
+        enterpriseMode: enterprisePolicy !== null,
       });
     }
   };
