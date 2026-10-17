@@ -35,11 +35,15 @@ async function run(request: StartMessage): Promise<void> {
     new Promise<string>((resolve) => {
       const callId = `${request.id}-${++counter}`;
       pending.set(callId, resolve);
+      const params: unknown = JSON.parse(paramsJson);
+      if (!params || typeof params !== "object" || Array.isArray(params)) {
+        throw new Error("Python Excel request must be a JSON object.");
+      }
       self.postMessage({
         type: "excel-call",
         id: request.id,
         callId,
-        request: { id: callId, tool, params: JSON.parse(paramsJson) },
+        request: { id: callId, tool, params },
       });
     }));
 
@@ -81,13 +85,14 @@ result = None
 
   try {
     // Pyodide supports top-level await via runPythonAsync.
-    const value = await py.runPythonAsync(request.code);
+    await py.runPythonAsync(request.code);
     const output = await py.runPythonAsync(`
 import json as _excel_json
 _excel_result = result if result is not None else None
 _excel_json.dumps(_excel_result, default=str)
 `);
-    self.postMessage({ type: "done", id: request.id, ok: true, resultJson: String(output), value: String(value ?? "") });
+    if (typeof output !== "string") throw new Error("Python did not return a JSON string.");
+    self.postMessage({ type: "done", id: request.id, ok: true, resultJson: output });
   } catch (error) {
     self.postMessage({
       type: "done",
