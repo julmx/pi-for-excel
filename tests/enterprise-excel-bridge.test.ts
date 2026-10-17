@@ -127,7 +127,7 @@ function responseTool(name: string, text: string, details: Record<string, unknow
 
 void test("blocked writes are reported as failures to Python", async () => {
   const bridge = createEnterpriseExcelBridge({
-    tools: [responseTool("write_cells", "Write blocked — destination already contains values.", {
+    tools: [responseTool("write_cells", "⛔ **Write blocked** — export_projets!A1 contains 1 non-empty cell(s).", {
       kind: "write_cells",
       blocked: true,
     })],
@@ -143,7 +143,7 @@ void test("blocked writes are reported as failures to Python", async () => {
   assert.deepEqual(result, {
     id: "1",
     ok: false,
-    error: "Write blocked — destination already contains values.",
+    error: "⛔ **Write blocked** — export_projets!A1 contains 1 non-empty cell(s).",
   });
 });
 
