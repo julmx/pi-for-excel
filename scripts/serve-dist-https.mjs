@@ -112,7 +112,13 @@ const server = https.createServer(
       }
 
       if (enterpriseCsp) {
-        res.setHeader("Content-Security-Policy", enterpriseCsp);
+        // Python's worker loads local WASM/wheels but cannot contact the LLM
+        // gateway, even though the taskpane is authorized to do so.
+        const pythonWorker = /^\\/assets\\/enterprise-python-worker-[\\w-]+\\.js$/u.test(reqPath);
+        const workerCsp = enterpriseCsp
+          .replace(/connect-src[^;]*/u, "connect-src 'self'")
+          .replace(/worker-src[^;]*/u, "worker-src 'none'");
+        res.setHeader("Content-Security-Policy", pythonWorker ? workerCsp : enterpriseCsp);
         res.setHeader("Referrer-Policy", "no-referrer");
         res.setHeader("X-Content-Type-Options", "nosniff");
       }
