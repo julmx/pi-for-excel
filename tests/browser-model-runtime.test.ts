@@ -20,6 +20,8 @@ import {
 import type { CustomProvider } from "../src/storage/local/custom-providers-store.ts";
 import { saveOpenAiGatewayConfig } from "../src/auth/custom-gateways.ts";
 import { createOfficeStreamFn } from "../src/auth/stream-proxy.ts";
+import { parseEnterpriseModelPolicy } from "../src/auth/enterprise-model-policy.ts";
+import { getEnterpriseStreamBaseUrl } from "../src/auth/enterprise-fetch-policy.ts";
 import {
   ProviderCredentialsStore,
   type ProviderKeysStoreLike,
@@ -842,4 +844,42 @@ void test("model refresh owner publishes cached startup before network discovery
   releaseFetch();
   await waitForOwnerRevision(owner, 2);
   assert.ok(runtime.models.getModel("Gateway · Acme", "network-model"));
+});
+
+void test("OpenAI-completions SDK sends a rewritten enterprise stream to the local relay", async () => {
+  const policy = parseEnterpriseModelPolicy({
+    enabled: true,
+    baseUrl: "https://company.example.invalid/v1",
+  });
+  assert.ok(policy);
+  const runtime = createRuntime();
+  await runtime.syncCustomProviders([
+    gatewayProvider({ baseUrl: policy.baseUrl }),
+  ]);
+  const configured = runtime.models.getModel("Gateway · Acme", "configured-model");
+  assert.ok(configured);
+  const routed = {
+    ...configured,
+    baseUrl: getEnterpriseStreamBaseUrl(policy, configured.baseUrl, "https://127.0.0.1:3141"),
+  };
+  let requestUrl = "";
+  let requestAuthorization = "";
+  const stream = runtime.models.streamSimple(
+    routed,
+    { messages: [{ role: "user", content: "hi", timestamp: 0 }] },
+    {
+      apiKey: "synthetic-key",
+      fetch: (input, init) => {
+        requestUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        requestAuthorization = new Headers(init?.headers).get("authorization") ?? "";
+        return Promise.resolve(new Response(JSON.stringify({ error: "synthetic test response" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }));
+      },
+    },
+  );
+  await (await stream).result();
+  assert.equal(requestUrl, "https://127.0.0.1:3141/__enterprise_api/chat/completions");
+  assert.equal(requestAuthorization, "Bearer synthetic-key");
 });
