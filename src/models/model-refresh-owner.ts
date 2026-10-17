@@ -3,6 +3,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 
 import type { CustomProvider } from "../storage/local/custom-providers-store.js";
 import { pickDefaultModel } from "../taskpane/default-model.js";
+import { isEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 import { resolveRuntimeModelSwap } from "../taskpane/runtime-model-reconcile.js";
 import type { BrowserModelRuntime } from "./browser-model-runtime.js";
 import { canonicalJson, toJsonValue } from "../utils/json.js";
@@ -199,7 +200,14 @@ export class ModelRefreshOwner {
     const availableProviders = Array.from(
       new Set(availableModels.map((model) => model.provider)),
     );
-    const defaultModel = pickDefaultModel(this.models, availableProviders, null);
+    const standardDefault = pickDefaultModel(this.models, availableProviders, null);
+    const enterprisePolicy = readBuildEnterpriseModelPolicy();
+    // The keyless enterprise-bootstrap placeholder is never a valid API model.
+    // Prefer an actually approved configured gateway when one is available.
+    const defaultModel = enterprisePolicy
+      ? availableModels.find((model) => isEnterpriseModelAllowed(enterprisePolicy, model))
+        ?? standardDefault
+      : standardDefault;
 
     this.currentSnapshot = {
       availableProviders,
