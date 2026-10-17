@@ -43,6 +43,10 @@ jobs:
         run: npm run build
       - name: Smoke-test bundled Python, NumPy and pandas
         run: node scripts/smoke-enterprise-pyodide.mjs
+      - name: Install Chromium for Python Worker integration
+        run: npx playwright install chromium --with-deps
+      - name: Exercise built Python Worker and Excel RPC in Chromium
+        run: node scripts/smoke-enterprise-python-browser.mjs
       - name: Generate local Windows sideload manifest
         run: npm run manifest:enterprise:local
 
