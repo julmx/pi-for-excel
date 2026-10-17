@@ -56,3 +56,43 @@ result == ["ALICE", "BOB"] and int(np.array([1, 2, 3]).sum()) == 6
 `);
 assert.equal(answer, true, "Self-hosted Python data science execution failed");
 console.log("Enterprise Pyodide smoke test passed (interpreter + pandas + NumPy).");
+/**
+ * Exercise the Python bootstrap embedded in the actual Web Worker. Loading
+ * pandas successfully does NOT prove that excel.read/excel.write work:
+ * double-underscore JS callback names are mangled inside Python classes.
+ */
+const workerSource = await readFile("src/python/enterprise-python-worker.ts", "utf8");
+const bootstrap = workerSource.match(/await py\\.runPythonAsync\\(`([\\s\\S]*?)`\\);\\s*try \\{/u)?.[1];
+assert.ok(bootstrap, "Could not locate the Python Excel API bootstrap in the worker");
+
+const requests = [];
+py.globals.set("_excel_rpc", async (tool, serializedParams) => {
+  const params = JSON.parse(serializedParams);
+  requests.push({ tool, params });
+  if (tool === "read_range") {
+    return JSON.stringify({
+      ok: true,
+      result: { details: { kind: "read_range_csv", values: [["name"], ["alice"]] } },
+    });
+  }
+  if (tool === "modify_structure" || tool === "write_cells") {
+    return JSON.stringify({ ok: true, result: { content: [{ type: "text", text: "Done" }] } });
+  }
+  return JSON.stringify({ ok: false, error: "Unexpected tool" });
+});
+await py.runPythonAsync(bootstrap);
+const rpcWorked = await py.runPythonAsync(`
+rows = await excel.read("Source!A1:A2")
+await excel.create_sheet("PythonResult")
+await excel.write("PythonResult!A1", rows)
+result = rows[1][0].upper()
+result == "ALICE"
+`);
+assert.equal(rpcWorked, true, "Python Excel RPC read/write roundtrip failed");
+assert.deepEqual(requests.map(({ tool }) => tool), [
+  "read_range", "modify_structure", "write_cells",
+]);
+assert.equal(requests[2].params.start_cell, "PythonResult!A1");
+assert.deepEqual(requests[2].params.values, [["name"], ["alice"]]);
+console.log("Enterprise Python Excel API smoke test passed (read, add sheet, write).");
+
