@@ -21,7 +21,8 @@ void test("enterprise agent prompt matches the approved Excel tool registry", ()
   assert.match(prompt, /Python.*unavailable|Unavailable:.*Python/iu);
   assert.match(prompt, /read_range.*csv/i);
   assert.match(prompt, /fill_formula/u);
-  assert.match(prompt, /merged\\s+group headings/u);\n  assert.doesNotMatch(prompt, /workbook_history.*python_transform_range/u);
+  assert.match(prompt, /merged\s+group headings/u);
+  assert.doesNotMatch(prompt, /workbook_history.*python_transform_range/u);
   assert.match(prompt, /Do not stop the task simply because Python is unavailable/iu);
   assert.doesNotMatch(prompt, /Two Python tools are always available/iu);
   assert.doesNotMatch(prompt, /run a Python snippet and inspect/iu);
