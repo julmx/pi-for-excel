@@ -51,6 +51,35 @@ first-party Excel tool names only**. Native Excel Table objects are not yet
 exposed by a dedicated approved tool, although ordinary range data and
 formatting are supported.
 
+## Troubleshooting: enterprise model blocked / proxy warning
+
+If the taskpane says `Enterprise policy blocked an unapproved API endpoint or
+provider`, it has not yet executed Python. This comes from the **selected
+LLM model**, not the Python Worker or port 3003.
+
+1. Save the workbook, stop the old PowerShell server, and close all Excel
+   windows before restarting. A stale Excel WebView can keep an earlier build.
+2. Confirm your checkout with `git branch --show-current`. It must be
+   `feature/enterprise-python-functional-mvp`.
+3. Run `start-enterprise-local.ps1` with the **same exact approved HTTPS
+   base URL** already configured under **Settings → Custom OpenAI-compatible
+   gateway**, including the URL path (typically `/v1`). Do not paste a key
+   or token into `-ApiBaseUrl`.
+4. Confirm the installed manifest is `manifest.enterprise.local.xml`,
+   reload the taskpane and select the actual gateway model. Start a new
+   chat to exclude previously saved provider selections and error messages.
+5. If the yellow `Proxy not running` banner persists, the current taskpane
+   is likely using a non-enterprise or cached build. It is intentionally
+   absent from the enterprise application. The optional localhost:3003
+   proxy does not fix the corporate API model policy.
+
+The branch also prefers a registered approved gateway over its temporary
+`enterprise-bootstrap` model and ignores invalid providers restored from
+old sessions. It does not relax endpoint validation.
+
+If random-looking text you pasted into a chat was an API key, revoke and
+rotate the key; a chat message is not the secure credential input.
+
 ## MVP tradeoffs
 
 - All Excel RPCs run through existing first-party tool implementations.
