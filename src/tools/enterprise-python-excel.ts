@@ -42,6 +42,7 @@ export function createEnterprisePythonExcelTool(hostKind: SpreadsheetHostKind): 
       if (!response.ok) {
         return {
           content: [{ type: "text", text: `Python execution failed: ${response.error ?? "Unknown error"}` }],
+          details: undefined,
         };
       }
       return {
@@ -49,6 +50,7 @@ export function createEnterprisePythonExcelTool(hostKind: SpreadsheetHostKind): 
           type: "text",
           text: `Python completed. Result: ${response.resultJson ?? "null"}`,
         }],
+        details: undefined,
       };
     },
   };
