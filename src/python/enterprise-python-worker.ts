@@ -23,7 +23,8 @@ const pending = new Map<string, ExcelCallback>();
 let counter = 0;
 
 async function run(request: StartMessage): Promise<void> {
-  const module = await import(/* @vite-ignore */ "/enterprise-pyodide/pyodide.mjs") as {
+  const localLoaderPath = "/enterprise-pyodide/pyodide.mjs";
+  const module = await import(/* @vite-ignore */ localLoaderPath) as {
     loadPyodide(options: { indexURL: string }): Promise<Runtime>;
   };
   const py = await module.loadPyodide({
