@@ -27,7 +27,7 @@ export function resolveEnterpriseRelayTarget(apiBaseUrl, path, method) {
   }
 
   return new URL(
-    `${upstream.pathname.replace(/\\/$/u, "")}/${suffix}`,
+    `${upstream.pathname.replace(/\/$/u, "")}/${suffix}`,
     upstream.origin,
   );
 }
