@@ -53,7 +53,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, {
       "content-type": mime[path.extname(target)] ?? "application/octet-stream",
       "content-security-policy":
-        /^\\/assets\\/enterprise-python-worker-[\\w-]+\\.js$/u.test(uri.pathname)
+        /^\/assets\/enterprise-python-worker-[\w-]+\.js$/u.test(uri.pathname)
           ? workerCsp
           : enterpriseCsp,
     });
