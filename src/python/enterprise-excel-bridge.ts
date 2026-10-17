@@ -96,7 +96,7 @@ export function createEnterpriseExcelBridge(options: EnterpriseExcelBridgeOption
           && typeof result.details === "object"
           && "blocked" in result.details
           && result.details.blocked === true;
-        if (blocked || (text !== undefined && /^Error(?:\\s|:)/iu.test(text.trimStart()))) {
+        if (blocked || (text !== undefined && /^Error(?:\s|:)/iu.test(text.trimStart()))) {
           return {
             id: request.id,
             ok: false,
