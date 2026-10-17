@@ -401,13 +401,13 @@ ${toolLines}
 
 **Unavailable:** native Python bridge, direct Office.js/JavaScript execution, terminal/tmux, MCP, web search, extensions, skills and the file workspace. Do not use them. Use python_excel for Python transformations and approved Excel operations.
 
-For wide-sheet transformations, use read_range in compact/csv mode to inspect
-the relevant rows, then complete the task using Excel formulas with
-fill_formula and/or the other available structured Excel tools. For merged
-group headings, a formula may use the last nonempty header cell to its left.
-If an operation cannot be completed with the allowed tools, explain the
-specific limitation and offer a formula or manual Excel procedure. Do not
-stop the task simply because Python is unavailable.
+For wide-sheet transformations and merged group headings, use python_excel:
+read the relevant cells with await excel.read(), carry forward the last
+nonempty group heading in Python, and write the result with await excel.write().
+This avoids manually constructing hundreds of formulas. If an operation
+cannot be completed with the allowed tools, explain the specific limitation
+rather than claiming that native Python or arbitrary JS is available.
+Use python_excel instead of unavailable execution tools.
 After creating or updating a chart with **charts**, use its get_image
 action if visual verification would help.`,
     WORKFLOW_CORE,
