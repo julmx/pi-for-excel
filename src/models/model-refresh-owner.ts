@@ -3,7 +3,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 
 import type { CustomProvider } from "../storage/local/custom-providers-store.js";
 import { pickDefaultModel } from "../taskpane/default-model.js";
-import { isEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
+import { findApprovedEnterpriseModel, readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 import { resolveRuntimeModelSwap } from "../taskpane/runtime-model-reconcile.js";
 import type { BrowserModelRuntime } from "./browser-model-runtime.js";
 import { canonicalJson, toJsonValue } from "../utils/json.js";
@@ -205,7 +205,7 @@ export class ModelRefreshOwner {
     // The keyless enterprise-bootstrap placeholder is never a valid API model.
     // Prefer an actually approved configured gateway when one is available.
     const defaultModel = enterprisePolicy
-      ? availableModels.find((model) => isEnterpriseModelAllowed(enterprisePolicy, model))
+      ? findApprovedEnterpriseModel(enterprisePolicy, availableModels)
         ?? standardDefault
       : standardDefault;
 
