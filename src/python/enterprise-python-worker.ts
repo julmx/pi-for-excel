@@ -10,6 +10,8 @@ type ExcelCallback = (response: string) => void;
 
 declare const self: {
   addEventListener(type: "message", listener: (event: MessageEvent<Incoming>) => void): void;
+  addEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
+  addEventListener(type: "unhandledrejection", listener: (event: PromiseRejectionEvent) => void): void;
   postMessage(message: object): void;
 };
 
