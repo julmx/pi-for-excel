@@ -9,6 +9,8 @@
  * - Worker → Main: PyodideWorkerResponse
  */
 
+import { executePyodideCode } from "./pyodide-execution.js";
+
 // Worker globals — declared locally to avoid tsconfig lib conflicts
 declare const self: {
   addEventListener(type: "message", listener: (event: MessageEvent) => void): void;
@@ -171,10 +173,6 @@ async function handleRun(request: PyodideWorkerRequest): Promise<PyodideWorkerRe
   const py = await ensurePyodide();
   const loadTimeMs = Math.round(performance.now() - loadStart);
 
-  // Capture stdout/stderr
-  let stdout = "";
-  let stderr = "";
-
   // Load explicitly requested packages
   if (request.packages && request.packages.length > 0) {
     await py.loadPackage(request.packages);
@@ -211,102 +209,18 @@ del __input_json__
     await py.runPythonAsync("input_data = None");
   }
 
-  // Set up stdout/stderr capture
-  await py.runPythonAsync(`
-import sys as __sys__
-import io as __io__
-__stdout_capture__ = __io__.StringIO()
-__stderr_capture__ = __io__.StringIO()
-__sys__.stdout = __stdout_capture__
-__sys__.stderr = __stderr_capture__
-result = None
-`);
-
   const runStart = performance.now();
-
-  try {
-    await py.runPythonAsync(request.code);
-  } catch (error) {
-    // Restore stdout/stderr before returning
-    await py.runPythonAsync(`
-__sys__.stdout = __sys__.__stdout__
-__sys__.stderr = __sys__.__stderr__
-`).catch(() => { /* ignore */ });
-
-    // Collect captured output even on error
-    try {
-      const getVal = await py.runPythonAsync("__stdout_capture__.getvalue()");
-      stdout = getVal != null ? `${getVal as string}` : "";
-    } catch { /* ignore */ }
-
-    try {
-      const getVal = await py.runPythonAsync("__stderr_capture__.getvalue()");
-      stderr = getVal != null ? `${getVal as string}` : "";
-    } catch { /* ignore */ }
-
-    const message = error instanceof Error ? error.message : String(error);
-    const response: PyodideWorkerResponse = {
-      id: request.id,
-      ok: false,
-      error: message,
-      loadTimeMs,
-      runTimeMs: Math.round(performance.now() - runStart),
-    };
-    if (stdout.length > 0) response.stdout = stdout;
-    if (stderr.length > 0) response.stderr = stderr;
-    return response;
-  }
-
-  const runTimeMs = Math.round(performance.now() - runStart);
-
-  // Collect stdout/stderr
-  try {
-    const getStdout = await py.runPythonAsync("__stdout_capture__.getvalue()");
-    stdout = getStdout != null ? `${getStdout as string}` : "";
-  } catch { /* ignore */ }
-
-  try {
-    const getStderr = await py.runPythonAsync("__stderr_capture__.getvalue()");
-    stderr = getStderr != null ? `${getStderr as string}` : "";
-  } catch { /* ignore */ }
-
-  // Collect result
-  let resultJson: string | undefined;
-  try {
-    const resultVal = await py.runPythonAsync(`
-import json as __json__
-__result_json__ = __json__.dumps(result) if result is not None else None
-__result_json__
-`);
-    if (resultVal != null) {
-      resultJson = `${resultVal as string}`;
-    }
-  } catch {
-    // result wasn't JSON-serializable — that's OK
-  }
-
-  // Restore stdout/stderr
-  await py.runPythonAsync(`
-__sys__.stdout = __sys__.__stdout__
-__sys__.stderr = __sys__.__stderr__
-`).catch(() => { /* ignore */ });
-
-  // Clean up globals
-  try {
-    py.globals.delete("__stdout_capture__");
-    py.globals.delete("__stderr_capture__");
-    py.globals.delete("__result_json__");
-  } catch { /* ignore */ }
-
+  const output = await executePyodideCode(py, request.code);
   const response: PyodideWorkerResponse = {
     id: request.id,
-    ok: true,
+    ok: output.error === undefined,
     loadTimeMs,
-    runTimeMs,
+    runTimeMs: Math.round(performance.now() - runStart),
   };
-  if (stdout.length > 0) response.stdout = stdout;
-  if (stderr.length > 0) response.stderr = stderr;
-  if (resultJson !== undefined) response.resultJson = resultJson;
+  if (output.error !== undefined) response.error = output.error;
+  if (output.stdout !== undefined) response.stdout = output.stdout;
+  if (output.stderr !== undefined) response.stderr = output.stderr;
+  if (output.resultJson !== undefined) response.resultJson = output.resultJson;
   return response;
 }
 
