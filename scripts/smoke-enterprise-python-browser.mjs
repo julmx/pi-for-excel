@@ -194,7 +194,7 @@ result = headers`,
     });
   }), workerFile);
   assert.equal(failed.ok, false);
-  assert.match(failed.error ?? "", /ValueError.*synthetic exception/u);
+  assert.match(failed.error ?? "", /ValueError.*synthetic exception/u, JSON.stringify(failed));
   assert.equal(failed.stdout?.trim(), "before failure");
   assert.deepEqual(errors, []);
   console.log("Browser smoke passed: Python stdout/stderr, errors, Excel RPC and results.");
