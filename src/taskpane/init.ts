@@ -232,8 +232,10 @@ export async function initTaskpane(opts: {
   // Initialize language from storage
   initLanguage(await readTaskpaneLanguage(settings));
 
-  // Seed a predictable proxy default for OAuth flows.
-  await ensureDefaultProxyUrl(settings, spreadsheetHost.kind);
+  // The enterprise build uses its approved API directly, never a helper proxy.
+  if (!enterprisePolicy) {
+    await ensureDefaultProxyUrl(settings, spreadsheetHost.kind);
+  }
 
   // Migrate legacy web-search API keys to the connection store schema.
   try {
@@ -1849,8 +1851,8 @@ export async function initTaskpane(opts: {
     }
   }
 
-  // ── Proxy warning banner (state-driven) ──
-  {
+  // ── Optional helper proxy warning (not used by enterprise builds) ──
+  if (!enterprisePolicy) {
     const messagesContainer = sidebar.querySelector(".pi-messages");
     const host = messagesContainer?.parentElement;
     if (host && messagesContainer) {
@@ -1944,8 +1946,8 @@ export async function initTaskpane(opts: {
     getExecutionMode,
   });
 
-  // ── Proxy status polling ──
-  startProxyPolling(settings);
+  // Enterprise model transport bypasses the optional proxy and must never probe it.
+  startProxyPolling(settings, { enabled: enterprisePolicy === null });
 
   // ── Wire command menu to textarea ──
   const wireTextarea = () => {
