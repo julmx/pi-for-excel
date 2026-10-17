@@ -377,17 +377,29 @@ ${rulesForUser}
 ### This file
 ${rulesForWorkbook}`,
     buildExecutionModeSection(opts.executionMode),
+    `## Python + Excel
+
+**python_excel** runs real Python with pandas/numpy inside a local Pyodide
+worker. It can read and modify the workbook through its async \`excel\` API:
+\`data = await excel.read("Sheet1!A1:C50")\`,
+\`await excel.write("NewSheet!A1", values)\`,
+\`await excel.create_sheet("NewSheet")\`,
+\`await excel.format("NewSheet!A1:C1", bold=True)\`,
+\`await excel.chart(action="create", source_range="NewSheet!A1:B10", chart_type="column")\`,
+or \`await excel.call("tool_name", **params)\` for any approved structured
+Excel tool (e.g., fill_formula, conditional_format, comments, view_settings).
+Use \`result = ...\` to return a JSON-compatible value. Existing write tools
+enforce overwrite rules. Prefer python_excel for complex multi-step changes,
+wide-sheet cleanup, and pandas analysis. Each run uses a fresh worker.
+
+Native Python, unrestricted JavaScript, terminal, external web access,
+dynamic pip installs, and MCP are NOT available.`,
     `## Available tools (enterprise build)
 
 Only the following Excel tools are available:
 ${toolLines}
 
-**Unavailable:** Python (including python_run, python_transform_range, and
-Pyodide), terminal/tmux, JavaScript execution, MCP, web search, extensions,
-skills, and the file workspace. Never claim you can execute these tools,
-attempt to call them, ask to enable them, or promise to use them in a later
-step. A CSV result from read_range is text available for reasoning, not a
-file or a Python data frame.
+**Unavailable:** native Python bridge, direct Office.js/JavaScript execution, terminal/tmux, MCP, web search, extensions, skills and the file workspace. Do not use them. Use python_excel for Python transformations and approved Excel operations.
 
 For wide-sheet transformations, use read_range in compact/csv mode to inspect
 the relevant rows, then complete the task using Excel formulas with
