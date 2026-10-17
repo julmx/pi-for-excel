@@ -40,8 +40,11 @@ for (const name of wheels) {
 }
 
 const { loadPyodide } = await import(pathToFileURL(path.join(root, "pyodide.mjs")).href);
+// Under Node.js Pyodide expects a filesystem directory here, whereas the
+// browser uses the HTTPS index URL. A file:// index URL is treated as a
+// relative module specifier by the Emscripten loader in Node.
 const py = await loadPyodide({
-  indexURL: pathToFileURL(root + path.sep).href,
+  indexURL: root + path.sep,
 });
 await py.loadPackage(["numpy", "pandas"]);
 const answer = await py.runPythonAsync(`
