@@ -12,7 +12,7 @@
 
 import { getAppStorage } from "../storage/local/app-storage.js";
 import { readBuildEnterpriseModelPolicy } from "./enterprise-model-policy.js";
-import { isEnterpriseFetchUrlAllowed } from "./enterprise-fetch-policy.js";
+import { getEnterpriseLocalRelayUrl, isEnterpriseFetchUrlAllowed } from "./enterprise-fetch-policy.js";
 
 import {
   DEFAULT_PROXY_URL,
@@ -157,6 +157,18 @@ export function installFetchInterceptor(settings?: SettingsReader): void {
     if (enterprisePolicy) {
       if (!isEnterpriseFetchUrlAllowed(enterprisePolicy, url, window.location.origin)) {
         throw new Error("Enterprise network policy blocked an unapproved fetch destination.");
+      }
+      // Windows smoke tests can opt into a SAME-ORIGIN relay when the
+      // corporate gateway does not expose CORS headers for Office WebView2.
+      // The server pins its destination to the approved enterprise API.
+      if (import.meta.env.VITE_PI_ENTERPRISE_LOCAL_API_RELAY === "true") {
+        const relayUrl = getEnterpriseLocalRelayUrl(enterprisePolicy, url, window.location.origin);
+        if (relayUrl) {
+          const forwarded = input instanceof Request
+            ? new Request(relayUrl, input)
+            : relayUrl;
+          return originalFetch(forwarded, init);
+        }
       }
       return originalFetch(input, init);
     }

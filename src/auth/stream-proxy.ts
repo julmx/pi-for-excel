@@ -29,6 +29,7 @@ import { selectToolBundle, type ToolBundleId } from "../context/tool-disclosure.
 import { modelRecencyScore } from "../models/model-ordering.js";
 import { OPENAI_GATEWAY_PROVIDER_PREFIX } from "./custom-gateways.js";
 import { assertEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "./enterprise-model-policy.js";
+import { getEnterpriseStreamBaseUrl } from "./enterprise-fetch-policy.js";
 import {
   createPrefixFingerprint,
   type PrefixChangeReason,
@@ -592,10 +593,22 @@ export function createOfficeStreamFn(
     );
     const effectiveOptions = withPayloadHook(options, callRecord.call, callRecord.captureSnapshot);
 
-    // Enterprise calls must go directly to the specifically approved API.
-    // No user-configurable CORS proxy can silently receive prompts or keys.
+    // The original model is validated above before changing its transport.
+    // Direct mode goes to the approved gateway. Windows smoke tests can opt
+    // into an explicit pinned loopback relay, even if the model SDK uses a
+    // private HTTP transport that bypasses window.fetch.
     if (enterprisePolicy) {
-      return modelsRuntime.streamSimple(normalizedModel, context, effectiveOptions);
+      const streamModel = import.meta.env.VITE_PI_ENTERPRISE_LOCAL_API_RELAY === "true"
+        ? {
+            ...normalizedModel,
+            baseUrl: getEnterpriseStreamBaseUrl(
+              enterprisePolicy,
+              normalizedModel.baseUrl,
+              window.location.origin,
+            ),
+          }
+        : normalizedModel;
+      return modelsRuntime.streamSimple(streamModel, context, effectiveOptions);
     }
 
     const proxyUrl = await getProxyUrl();

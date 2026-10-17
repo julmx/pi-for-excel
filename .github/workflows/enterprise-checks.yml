@@ -26,6 +26,10 @@ jobs:
         run: npm ci
       - name: Lint and typecheck
         run: npm run check
+      - name: Check local HTTPS server syntax
+        run: |
+          node --check scripts/serve-dist-https.mjs
+          node --check scripts/enterprise-api-relay.mjs
       - name: Run enterprise policy tests
         run: npm run test:enterprise
       - name: Run model tests
@@ -37,6 +41,12 @@ jobs:
           VITE_PI_ENTERPRISE_MODE: "true"
           VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
         run: npm run build
+      - name: Smoke-test bundled Python, NumPy and pandas
+        run: node scripts/smoke-enterprise-pyodide.mjs
+      - name: Install Chromium for Python Worker integration
+        run: npx playwright install chromium --with-deps
+      - name: Exercise built Python Worker and Excel RPC in Chromium
+        run: node scripts/smoke-enterprise-python-browser.mjs
       - name: Generate local Windows sideload manifest
         run: npm run manifest:enterprise:local
 
@@ -60,3 +70,19 @@ jobs:
             exit 1
           }
           Write-Host "Enterprise Windows launcher syntax is valid."
+      - name: Setup Node.js for Windows Python smoke
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build enterprise Web Worker on Windows
+        env:
+          VITE_PI_ENTERPRISE_MODE: "true"
+          VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
+        run: npm run build
+      - name: Install Chromium for Windows Worker smoke
+        run: npx playwright install chromium
+      - name: Run Python Excel Worker in Windows Chromium
+        run: node scripts/smoke-enterprise-python-browser.mjs

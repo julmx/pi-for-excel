@@ -18,12 +18,13 @@ void test("enterprise agent prompt matches the approved Excel tool registry", ()
   }
 
   assert.match(prompt, /only the following Excel tools are available/i);
-  assert.match(prompt, /Python.*unavailable|Unavailable:.*Python/iu);
+  assert.match(prompt, /python_excel.*Pyodide|Pyodide[\s\S]*python_excel/iu);
+  assert.match(prompt, /await excel.read/iu);
   assert.match(prompt, /read_range.*csv/i);
   assert.match(prompt, /fill_formula/u);
   assert.match(prompt, /merged\s+group headings/u);
   assert.doesNotMatch(prompt, /workbook_history.*python_transform_range/u);
-  assert.match(prompt.replace(/\s+/gu, " "), /Do not stop the task simply because Python is unavailable/iu);
+  assert.match(prompt.replace(/\s+/gu, " "), /use python_excel instead/iu);
   assert.doesNotMatch(prompt, /Two Python tools are always available/iu);
   assert.doesNotMatch(prompt, /run a Python snippet and inspect/iu);
   assert.doesNotMatch(prompt, /in-browser via Pyodide.*no setup required/iu);

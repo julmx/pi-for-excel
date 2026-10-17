@@ -377,25 +377,37 @@ ${rulesForUser}
 ### This file
 ${rulesForWorkbook}`,
     buildExecutionModeSection(opts.executionMode),
+    `## Python + Excel
+
+**python_excel** runs real Python with pandas/numpy inside a local Pyodide
+worker. It can read and modify the workbook through its async \`excel\` API:
+\`data = await excel.read("Sheet1!A1:C50")\`,
+\`await excel.write("NewSheet!A1", values)\`,
+\`await excel.create_sheet("NewSheet")\`,
+\`await excel.format("NewSheet!A1:C1", bold=True)\`,
+\`await excel.chart(action="create", source_range="NewSheet!A1:B10", chart_type="column")\`,
+or \`await excel.call("tool_name", **params)\` for any approved structured
+Excel tool (e.g., fill_formula, conditional_format, comments, view_settings).
+Use \`result = ...\` to return a JSON-compatible value. Existing write tools
+enforce overwrite rules. Prefer python_excel for complex multi-step changes,
+wide-sheet cleanup, and pandas analysis. Each run uses a fresh worker.
+
+Native Python, unrestricted JavaScript, terminal, external web access,
+dynamic pip installs, and MCP are NOT available.`,
     `## Available tools (enterprise build)
 
 Only the following Excel tools are available:
 ${toolLines}
 
-**Unavailable:** Python (including python_run, python_transform_range, and
-Pyodide), terminal/tmux, JavaScript execution, MCP, web search, extensions,
-skills, and the file workspace. Never claim you can execute these tools,
-attempt to call them, ask to enable them, or promise to use them in a later
-step. A CSV result from read_range is text available for reasoning, not a
-file or a Python data frame.
+**Unavailable:** native Python bridge, direct Office.js/JavaScript execution, terminal/tmux, MCP, web search, extensions, skills and the file workspace. Do not use them. Use python_excel for Python transformations and approved Excel operations.
 
-For wide-sheet transformations, use read_range in compact/csv mode to inspect
-the relevant rows, then complete the task using Excel formulas with
-fill_formula and/or the other available structured Excel tools. For merged
-group headings, a formula may use the last nonempty header cell to its left.
-If an operation cannot be completed with the allowed tools, explain the
-specific limitation and offer a formula or manual Excel procedure. Do not
-stop the task simply because Python is unavailable.
+For wide-sheet transformations and merged group headings, use python_excel:
+read the relevant cells with await excel.read(), carry forward the last
+nonempty group heading in Python, and write the result with await excel.write().
+This avoids manually constructing hundreds of formulas. If an operation
+cannot be completed with the allowed tools, explain the specific limitation
+rather than claiming that native Python or arbitrary JS is available.
+Use python_excel instead of unavailable execution tools.
 After creating or updating a chart with **charts**, use its get_image
 action if visual verification would help.`,
     WORKFLOW_CORE,

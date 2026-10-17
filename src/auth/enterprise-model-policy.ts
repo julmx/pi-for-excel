@@ -78,12 +78,31 @@ export function isEnterpriseModelAllowed(
   }
 }
 
+/**
+ * Pick only a model registered through the approved private gateway.
+ * The enterprise-bootstrap placeholder must never be chosen when a genuine
+ * gateway model is available.
+ */
+export function findApprovedEnterpriseModel<T extends Pick<Model<Api>, "provider" | "api" | "baseUrl" | "id">>(
+  policy: EnterpriseModelPolicy,
+  models: readonly T[],
+): T | null {
+  return models.find((model) => isEnterpriseModelAllowed(policy, model)) ?? null;
+}
+
 /** No fallback to other vendors, custom gateways, or cached model choices. */
 export function assertEnterpriseModelAllowed(
   policy: EnterpriseModelPolicy,
   model: Pick<Model<Api>, "provider" | "api" | "baseUrl" | "id">,
 ): void {
   if (!isEnterpriseModelAllowed(policy, model)) {
-    throw new Error("Enterprise policy blocked an unapproved API endpoint or provider.");
+    if (model.provider === "enterprise-bootstrap") {
+      throw new Error(
+        "No enterprise gateway model is selected. Configure the approved Custom OpenAI-compatible gateway in Settings, then select its model.",
+      );
+    }
+    throw new Error(
+      "Enterprise model configuration mismatch. Select a model from the approved Custom OpenAI-compatible gateway and verify that its API base URL exactly matches the URL used to build this add-in.",
+    );
   }
 }

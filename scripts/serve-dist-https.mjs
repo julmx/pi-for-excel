@@ -15,6 +15,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { buildEnterpriseContentSecurityPolicy } from "./enterprise-csp.mjs";
+import { handleEnterpriseApiRelay } from "./enterprise-api-relay.mjs";
 
 const HOST = process.env.HOST || "localhost";
 const PORT = Number.parseInt(process.env.PORT || "3141", 10);
@@ -48,6 +49,9 @@ const MIME = {
   ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".whl": "application/octet-stream",
+  ".zip": "application/zip",
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
@@ -99,6 +103,14 @@ const server = https.createServer(
       let reqPath = url.pathname;
       if (reqPath === "/") reqPath = "/src/taskpane.html";
 
+      // Optional same-origin forwarding, restricted to the approved API
+      // and permitted only after the loopback check above.
+      if (enterpriseCsp && process.env.ENTERPRISE_LOCAL_API_RELAY === "1") {
+        if (handleEnterpriseApiRelay(req, res, process.env.ENTERPRISE_API_BASE_URL, reqPath)) {
+          return;
+        }
+      }
+
       const filePath = safeJoin(distDir, reqPath);
       if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
         res.statusCode = 404;
@@ -109,7 +121,13 @@ const server = https.createServer(
       }
 
       if (enterpriseCsp) {
-        res.setHeader("Content-Security-Policy", enterpriseCsp);
+        // Python's worker loads local WASM/wheels but cannot contact the LLM
+        // gateway, even though the taskpane is authorized to do so.
+        const pythonWorker = /^\/assets\/enterprise-python-worker-[\w-]+\.js$/u.test(reqPath);
+        const workerCsp = enterpriseCsp
+          .replace(/connect-src[^;]*/u, "connect-src 'self'")
+          .replace(/worker-src[^;]*/u, "worker-src 'none'");
+        res.setHeader("Content-Security-Policy", pythonWorker ? workerCsp : enterpriseCsp);
         res.setHeader("Referrer-Policy", "no-referrer");
         res.setHeader("X-Content-Type-Options", "nosniff");
       }

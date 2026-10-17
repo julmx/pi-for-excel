@@ -7,7 +7,7 @@ void test("enterprise CSP permits the internal API and mandatory Office.js CDN o
   const csp = buildEnterpriseContentSecurityPolicy("https://llm.example.invalid/v1");
   assert.match(csp, /default-src 'none'/u);
   assert.match(csp, /connect-src 'self' https:\/\/appsforoffice\.microsoft\.com https:\/\/llm\.example\.invalid/u);
-  assert.match(csp, /script-src 'self' https:\/\/appsforoffice\.microsoft\.com/u);
+  assert.match(csp, /script-src 'self' 'wasm-unsafe-eval' https:\/\/appsforoffice\.microsoft\.com/u);
   assert.match(csp, /frame-src 'none'/u);
   assert.doesNotMatch(csp, /api\.openai\.com|api\.anthropic\.com|vercel\.app|jsdelivr\.net/u);
 });

@@ -39,3 +39,6 @@ pi-session-*
 
 # Generated enterprise sideload manifest (contains local test configuration)
 manifest.enterprise.local.xml
+
+# Downloaded Pyodide runtime and wheels (self-hosted production assets)
+public/enterprise-pyodide/

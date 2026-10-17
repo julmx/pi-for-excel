@@ -19,6 +19,7 @@ const ENTERPRISE_EXCEL_TOOL_NAMES = new Set<string>([
   "view_settings",
   "comments",
   "workbook_history",
+  "python_excel",
 ]);
 
 /** Preserve tool instances and ordering while omitting unapproved built-ins. */

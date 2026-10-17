@@ -15,6 +15,7 @@ import type { SettingsStore } from "../storage/local/settings-store.js";
 import type { SpreadsheetHost } from "../host/types.js";
 
 import { getCurrentSpreadsheetHost } from "../host/index.js";
+import { findApprovedEnterpriseModel, isEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
 import { extractTextFromContent } from "../utils/content.js";
 
 export interface SessionPersistenceController {
@@ -301,7 +302,19 @@ export async function setupSessionPersistence(opts: {
     agent.state.messages = sessionData.messages;
 
     if (sessionData.model) {
-      agent.state.model = refreshPersistedModel(opts.models, sessionData.model);
+      const storedModel = refreshPersistedModel(opts.models, sessionData.model);
+      const enterprisePolicy = readBuildEnterpriseModelPolicy();
+      if (!enterprisePolicy || isEnterpriseModelAllowed(enterprisePolicy, storedModel)) {
+        agent.state.model = storedModel;
+      } else {
+        // Sessions can outlive a gateway URL, protocol or provider switch.
+        // Never reinstate a stale non-enterprise model on startup.
+        const current = agent.state.model;
+        const approved = isEnterpriseModelAllowed(enterprisePolicy, current)
+          ? current
+          : findApprovedEnterpriseModel(enterprisePolicy, opts.models.getModels());
+        if (approved) agent.state.model = approved;
+      }
     }
     if (sessionData.thinkingLevel) {
       agent.state.thinkingLevel = sessionData.thinkingLevel;

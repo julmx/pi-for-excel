@@ -20,13 +20,13 @@ export function buildEnterpriseContentSecurityPolicy(apiBaseUrl) {
 
   return [
     "default-src 'none'",
-    "script-src 'self' https://appsforoffice.microsoft.com",
+    "script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' data: blob:",
     `connect-src 'self' https://appsforoffice.microsoft.com ${parsed.origin}`,
     "frame-src 'none'",
-    "worker-src 'none'",
+    "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
