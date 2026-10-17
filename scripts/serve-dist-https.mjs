@@ -15,6 +15,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { buildEnterpriseContentSecurityPolicy } from "./enterprise-csp.mjs";
+import { handleEnterpriseApiRelay } from "./enterprise-api-relay.mjs";
 
 const HOST = process.env.HOST || "localhost";
 const PORT = Number.parseInt(process.env.PORT || "3141", 10);
@@ -101,6 +102,14 @@ const server = https.createServer(
       const url = new URL(req.url || "/", `https://${HOST}:${PORT}`);
       let reqPath = url.pathname;
       if (reqPath === "/") reqPath = "/src/taskpane.html";
+
+      // Optional same-origin forwarding, restricted to the approved API
+      // and permitted only after the loopback check above.
+      if (enterpriseCsp && process.env.ENTERPRISE_LOCAL_API_RELAY === "1") {
+        if (handleEnterpriseApiRelay(req, res, process.env.ENTERPRISE_API_BASE_URL, reqPath)) {
+          return;
+        }
+      }
 
       const filePath = safeJoin(distDir, reqPath);
       if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
