@@ -114,7 +114,7 @@ const server = https.createServer(
       if (enterpriseCsp) {
         // Python's worker loads local WASM/wheels but cannot contact the LLM
         // gateway, even though the taskpane is authorized to do so.
-        const pythonWorker = /^\\/assets\\/enterprise-python-worker-[\\w-]+\\.js$/u.test(reqPath);
+        const pythonWorker = /^\/assets\/enterprise-python-worker-[\w-]+\.js$/u.test(reqPath);
         const workerCsp = enterpriseCsp
           .replace(/connect-src[^;]*/u, "connect-src 'self'")
           .replace(/worker-src[^;]*/u, "worker-src 'none'");
