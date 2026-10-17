@@ -27,7 +27,9 @@ jobs:
       - name: Lint and typecheck
         run: npm run check
       - name: Check local HTTPS server syntax
-        run: node --check scripts/serve-dist-https.mjs
+        run: |
+          node --check scripts/serve-dist-https.mjs
+          node --check scripts/enterprise-api-relay.mjs
       - name: Run enterprise policy tests
         run: npm run test:enterprise
       - name: Run model tests
