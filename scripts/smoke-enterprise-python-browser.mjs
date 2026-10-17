@@ -190,7 +190,7 @@ result = headers`,
     worker.postMessage({
       type: "run",
       id: "enterprise-python-error-smoke",
-      code: 'print("before failure")\\nraise ValueError("synthetic exception")',
+      code: 'print("before failure")\nraise ValueError("synthetic exception")',
     });
   }), workerFile);
   assert.equal(failed.ok, false);
