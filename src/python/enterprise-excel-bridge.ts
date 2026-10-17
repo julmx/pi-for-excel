@@ -87,6 +87,22 @@ export function createEnterpriseExcelBridge(options: EnterpriseExcelBridgeOption
         }
         if (signal?.aborted) throw new Error("Aborted");
         const result = await tool.execute(options.newToolCallId(), request.params, signal);
+        // Existing Pi Excel tools sometimes report a rejected operation as a
+        // normal AgentToolResult rather than throwing. Do not tell Python that
+        // a blocked write or an Excel error succeeded.
+        const text = result.content.find((item) => item.type === "text")?.text;
+        const blocked = result.details !== undefined
+          && result.details !== null
+          && typeof result.details === "object"
+          && "blocked" in result.details
+          && result.details.blocked === true;
+        if (blocked || (text !== undefined && /^Error(?:\\s|:)/iu.test(text.trimStart()))) {
+          return {
+            id: request.id,
+            ok: false,
+            error: text ?? `${tool.name} was blocked by the Excel tool.`,
+          };
+        }
         return { id: request.id, ok: true, result };
       } catch (error) {
         return {
