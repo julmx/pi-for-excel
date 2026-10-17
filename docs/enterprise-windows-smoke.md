@@ -27,7 +27,7 @@ public repository, or issue. Use the custom gateway's runtime credential
 field after starting the add-in. The endpoint URL itself is bundled into
 the local built JavaScript, so consider it deployment configuration.
 
-## 1. Clone the feature branch
+## 1. Clone or update `main`
 
 Open **PowerShell** on the Windows computer that runs Excel:
 
@@ -35,12 +35,13 @@ Open **PowerShell** on the Windows computer that runs Excel:
 git clone https://github.com/julmx/pi-for-excel.git
 cd pi-for-excel
 git fetch origin
-git switch --track origin/feature/enterprise-windows-local-smoke
+git switch main
+git pull --ff-only
 ```
 
-If you already cloned the fork, run `git fetch origin` and switch to the
-feature branch instead. Do not use `main` or the upstream production
-manifest for this test.
+If you already cloned the fork, run `git fetch origin`, `git switch main`,
+and `git pull --ff-only`. Use the generated enterprise-local manifest, not
+the upstream production manifest.
 
 ## 2. Create local HTTPS certificates (once)
 
@@ -85,7 +86,8 @@ Notes:
 - The local server sets a strict CSP and blocks connections to other origins,
   except the approved API origin and the Office.js CDN where applicable.
   CSP compatibility must be validated in the installed Excel WebView.
-- No Python, tmux, MCP or external proxy server is needed for this test.
+- No separately installed Python, tmux, MCP or external proxy server is needed.
+  Enterprise Python runs through bundled Pyodide inside the add-in's Worker.
 
 ## 4. Sideload into Excel for Windows
 
@@ -144,7 +146,8 @@ origin/path from the WebView's developer tools and review it before permitting
 it. Do **not** disable CSP or add wildcard `connect-src` rules to make a
 confidential-data test appear to work.
 
-**Known gaps:** There has not yet been a Windows Excel end-to-end smoke test.
+**Known gaps:** A successful Windows Excel WebView2 end-to-end Python smoke test
+is still outstanding. Chromium CI checks do not establish WebView2 parity.
 The full set of browser transports and extension-adjacent paths is not a
 certified egress boundary. Review dependencies, API-key persistence and
 organizational controls before authorizing confidential workbooks.
