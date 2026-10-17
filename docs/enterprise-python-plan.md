@@ -95,3 +95,28 @@ transformations and representative multi-sheet tasks.
 
 The goal is useful Python/Excel functionality first, then a full security
 qualification before confidential production deployment.
+
+## Post-MVP reuse review
+
+The original Pi for Excel already had `python_run`, `python_transform_range`,
+`pyodide-runtime.ts` and `pyodide-worker.ts`. We should not duplicate their
+general execution logic.
+
+The reviewed boundary is deliberately narrow:
+
+| Capability | Reuse decision |
+| --- | --- |
+| Python stdout/stderr, exceptions, JSON results | Shared execution helper extracted from the original Pyodide worker; both workers call it |
+| Ordinary `python_run` and `python_transform_range` | Keep original behavior unchanged outside enterprise mode |
+| Enterprise runtime and package loading | Retain the separate Worker because ordinary Pi downloads code/packages from a public CDN and can invoke the native Python bridge |
+| Multi-step `excel.read/write/create_sheet` in one script | Retain structured, allowlisted Excel RPC; the existing `python_transform_range` only supports its predetermined read-transform-write operation |
+| Auto/Confirm, overwrite checks and workbook history | Delegate to existing first-party Excel tools and workbook coordinator, not new implementations |
+
+Do not combine the original CDN/micropip Worker with the enterprise Worker
+simply to reduce the number of files. Doing so would weaken the separation
+between unrestricted and enterprise code-loading policies.
+
+Future changes should extend the existing tool or worker when possible;
+any new enterprise-only behavior should document which existing capability
+cannot satisfy its requirement. Production use of confidential company data
+still requires the deferred security qualification.

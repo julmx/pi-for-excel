@@ -39,17 +39,13 @@ export function createEnterprisePythonExcelTool(hostKind: SpreadsheetHostKind): 
         newToolCallId: () => crypto.randomUUID(),
       });
       const response = await runEnterprisePython(params.code, bridge.handle, signal);
-      if (!response.ok) {
-        return {
-          content: [{ type: "text", text: `Python execution failed: ${response.error ?? "Unknown error"}` }],
-          details: undefined,
-        };
-      }
+      const output = [response.ok
+        ? `Python completed. Result: ${response.resultJson ?? "null"}`
+        : `Python execution failed: ${response.error ?? "Unknown error"}`];
+      if (response.stdout) output.push(`Stdout:\n${response.stdout}`);
+      if (response.stderr) output.push(`Stderr:\n${response.stderr}`);
       return {
-        content: [{
-          type: "text",
-          text: `Python completed. Result: ${response.resultJson ?? "null"}`,
-        }],
+        content: [{ type: "text", text: output.join("\n\n") }],
         details: undefined,
       };
     },

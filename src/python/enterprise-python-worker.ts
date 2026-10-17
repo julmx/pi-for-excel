@@ -3,6 +3,8 @@
  * Python communicates with Excel exclusively through the typed RPC messages.
  * The Pyodide runtime and wheels are served from the taskpane origin.
  */
+import { executePyodideCode } from "./pyodide-execution.js";
+
 interface StartMessage { type: "run"; id: string; code: string }
 interface ExcelResultMessage { type: "excel-result"; callId: string; response: string }
 type Incoming = StartMessage | ExcelResultMessage;
@@ -18,7 +20,7 @@ declare const self: {
 interface Runtime {
   loadPackage(names: string[]): Promise<void>;
   runPythonAsync(code: string): Promise<string | number | boolean | object | null | undefined>;
-  globals: { set(key: string, value: object): void };
+  globals: { set(key: string, value: object): void; delete(key: string): void };
 }
 
 const pending = new Map<string, ExcelCallback>();
@@ -100,15 +102,29 @@ result = None
   try {
     announceStage(request.id, "running the Python script");
     // Pyodide supports top-level await via runPythonAsync.
-    await py.runPythonAsync(request.code);
-    const output = await py.runPythonAsync(`
-import json as _excel_json
-_excel_result = result if result is not None else None
-_excel_json.dumps(_excel_result, default=str)
-`);
-    if (typeof output !== "string") throw new Error("Python did not return a JSON string.");
+    // Reuse the original Pi Python execution contract for stdout, stderr,
+    // Python exceptions and JSON results. The Excel RPC remains enterprise-only.
+    const output = await executePyodideCode(py, request.code, true);
     announceStage(request.id, "returning Python results");
-    self.postMessage({ type: "done", id: request.id, ok: true, resultJson: output });
+    if (output.error !== undefined) {
+      self.postMessage({
+        type: "done",
+        id: request.id,
+        ok: false,
+        error: output.error,
+        ...(output.stdout !== undefined ? { stdout: output.stdout } : {}),
+        ...(output.stderr !== undefined ? { stderr: output.stderr } : {}),
+      });
+      return;
+    }
+    self.postMessage({
+      type: "done",
+      id: request.id,
+      ok: true,
+      resultJson: output.resultJson ?? "null",
+      ...(output.stdout !== undefined ? { stdout: output.stdout } : {}),
+      ...(output.stderr !== undefined ? { stderr: output.stderr } : {}),
+    });
   } catch (error) {
     self.postMessage({
       type: "done",

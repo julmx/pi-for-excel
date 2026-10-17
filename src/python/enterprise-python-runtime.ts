@@ -6,13 +6,15 @@ import type { EnterpriseExcelOperation, EnterpriseExcelOperationResponse } from 
 
 interface RunMessage { type: "run"; id: string; code: string }
 interface ExcelCallMessage { type: "excel-call"; id: string; callId: string; request: EnterpriseExcelOperation }
-interface FinishedMessage { type: "done"; id: string; ok: boolean; resultJson?: string; error?: string }
+interface FinishedMessage { type: "done"; id: string; ok: boolean; resultJson?: string; stdout?: string; stderr?: string; error?: string }
 interface StageMessage { type: "stage"; id: string; stage: string }
 type WorkerMessage = ExcelCallMessage | FinishedMessage | StageMessage;
 
 export interface EnterprisePythonResult {
   ok: boolean;
   resultJson?: string;
+  stdout?: string;
+  stderr?: string;
   error?: string;
 }
 
@@ -66,6 +68,8 @@ export function runEnterprisePython(
         finish({
           ok: message.ok,
           ...(message.resultJson !== undefined ? { resultJson: message.resultJson } : {}),
+          ...(message.stdout !== undefined ? { stdout: message.stdout } : {}),
+          ...(message.stderr !== undefined ? { stderr: message.stderr } : {}),
           ...(message.error !== undefined ? { error: message.error } : {}),
         });
         return;
