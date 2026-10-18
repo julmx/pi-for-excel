@@ -37,7 +37,7 @@ export function buildEnterpriseContentSecurityPolicy(apiBaseUrl, runnerOrigin = 
 }
 
 /**
- * Applied ONLY on the isolated localhost runner host, never on the taskpane.
+ * Applied ONLY on the dedicated 127.0.0.2 runner origin, never on the taskpane.
  * No model gateway, Office.js CDN, API relay, or navigation is permitted.
  */
 export function buildEnterprisePythonRunnerCsp(worker = false) {
