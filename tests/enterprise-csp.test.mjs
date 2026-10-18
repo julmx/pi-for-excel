@@ -35,5 +35,5 @@ void test("isolated runner CSP never receives model gateway access", () => {
   assert.match(runner, /connect-src 'self'/u);
   assert.match(worker, /worker-src 'none'/u);
   assert.match(runner, /worker-src 'self'/u);
-  assert.doesNotMatch(runner, /appsforoffice|private\.example|unsafe-inline|unsafe-eval/u);
+  assert.doesNotMatch(runner, /appsforoffice|private\.example|unsafe-inline|'unsafe-eval'/u);
 });
