@@ -166,12 +166,35 @@ origin/path from the WebView's developer tools and review it before permitting
 it. Do **not** disable CSP or add wildcard `connect-src` rules to make a
 confidential-data test appear to work.
 
-**Known gaps:** Earlier Windows Excel Python/pandas processing and overwrite
-protection succeeded with the original same-origin Worker. The new isolated
-runner still requires a fresh end-to-end acceptance on Windows Excel WebView2,
-including loading `https://localhost:3142/enterprise-runner.html`, a pandas
-read/transform/write test and a synthetic same-origin storage denial.
-Chromium CI checks do not establish WebView2 parity.
-The full set of browser transports and extension-adjacent paths is not a
-certified egress boundary. Review dependencies, API-key persistence and
-organizational controls before authorizing confidential workbooks.
+### Windows Excel WebView2 acceptance — 18 October 2026
+
+User-observed tests in the installed Excel add-in, using **synthetic data**:
+
+- `python_excel` reported `location.origin = https://localhost:3142`;
+  the Excel taskpane remained on `https://127.0.0.1:3141`.
+- pandas created a DataFrame, wrote to a new worksheet and read it back;
+  an attempted overwrite of a filled cell raised `RuntimeError` without
+  changing the original values.
+- An IndexedDB database named `__pi_isolation_manual_test` was created
+  in the **taskpane** DevTools context. The parent verified
+  `parent_has_canary: true`; a Python probe executed by the production
+  isolated runner reported `canary_visible: false`.
+  Only a synthetic marker was involved, never real application credentials.
+  The test script requested deletion of the synthetic database in `finally`.
+- A WebView2 Network HAR captured taskpane loopback API calls and local
+  runner/Pyodide asset loads, with no other destinations **observed in that
+  capture**. Separately, a 60-second Windows TCP sampling of the local
+  Node.js server reported `51.159.8.229:443`, matching the contemporaneous
+  DNS resolution of the configured enterprise gateway. Sampling and HAR
+  capture cannot prove the absence of every possible outbound request.
+- Linux and Windows Chromium tests additionally check the isolated storage
+  boundary and that a synthetic disallowed network request does not reach
+  its local test sink (PR #21).
+
+**Remaining security and release limits:** These results confirm the tested
+WebView2 isolation and network behavior, not a comprehensive sandbox audit
+or an authorization to use confidential workbooks. Review existing
+`localhost` cookies, browser-adjacent transports, provider-key/session
+retention, relay authorization and organizational approval. The resource
+limits, cancellation and partial-write scenarios were consciously deferred
+during this validation; no claim is made that they passed.
