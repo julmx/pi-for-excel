@@ -55,6 +55,15 @@ Certificates stay on your machine and are ignored by Git.
 "@
     }
 
+    # Reuse the existing local certificate only if it covers both the
+    # taskpane IP and the runner hostname; no certificate regeneration needed.
+    # PowerShell passes single quotes inside a double-quoted argument intact
+    # to the Windows Node executable (unlike double quotes inside single quotes).
+    & node -e "const fs=require('node:fs'); const {X509Certificate}=require('node:crypto'); const cert=new X509Certificate(fs.readFileSync('cert.pem')); if(cert.checkIP('127.0.0.1') !== '127.0.0.1' || cert.checkHost('localhost') !== 'localhost') process.exit(1)"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Local cert.pem must cover 127.0.0.1 and localhost. Use an approved certificate if either hostname is missing."
+    }
+
     if (-not $SkipInstall) {
         Invoke-Checked -Executable "npm.cmd" -Arguments @("ci")
     } elseif (-not (Test-Path (Join-Path $root "node_modules"))) {
@@ -65,6 +74,9 @@ Certificates stay on your machine and are ignored by Git.
     $env:VITE_PI_ENTERPRISE_MODE = "true"
     $env:VITE_PI_ENTERPRISE_API_BASE_URL = $ApiBaseUrl.TrimEnd("/")
     $env:VITE_PI_ENTERPRISE_LOCAL_API_RELAY = if ($UseLocalApiRelay) { "true" } else { "false" }
+    # Override inherited developer/CI values: the local origins are fixed.
+    $env:VITE_PI_ENTERPRISE_TASKPANE_ORIGIN = "https://127.0.0.1:3141"
+    $env:VITE_PI_ENTERPRISE_RUNNER_ORIGIN = "https://localhost:3142"
     Invoke-Checked -Executable "npm.cmd" -Arguments @("run", "build")
 
     Invoke-Checked -Executable "node" -Arguments @("scripts/generate-enterprise-local-manifest.mjs")
@@ -79,6 +91,7 @@ Certificates stay on your machine and are ignored by Git.
     Write-Host "Local enterprise Pi for Excel is ready for a synthetic-data test."
     Write-Host "Manifest: $root\manifest.enterprise.local.xml"
     Write-Host "Taskpane: https://127.0.0.1:3141/src/taskpane.html"
+    Write-Host "Isolated Python runner: https://localhost:3142/enterprise-runner.html"
     Write-Host "Approved API: $($env:ENTERPRISE_API_BASE_URL)"
     Write-Host "Local API relay enabled: $($UseLocalApiRelay.IsPresent)"
     Write-Host "Keep this terminal open and load the manifest via Excel > Add-ins."

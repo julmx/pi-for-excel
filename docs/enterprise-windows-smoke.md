@@ -87,7 +87,16 @@ Notes:
   except the approved API origin and the Office.js CDN where applicable.
   CSP compatibility must be validated in the installed Excel WebView.
 - No separately installed Python, tmux, MCP or external proxy server is needed.
-  Enterprise Python runs through bundled Pyodide inside the add-in's Worker.
+  Enterprise Python runs through bundled Pyodide in an isolated-origin Worker.
+  The same Node process serves both `https://127.0.0.1:3141` (Excel taskpane)
+  and `https://localhost:3142` (minimal Python runner). They are distinct
+  browser origins with separate IndexedDB storage. Taskpane cookies for
+  `127.0.0.1` are not shared with `localhost`, but older applications hosted
+  under `localhost` may have left cookies shared across ports. This prototype
+  remains restricted to synthetic testing until that exposure is reviewed.
+  Port 3142 must be available. The runner cannot use the API relay, and the
+  taskpane may frame only that runner origin. The existing certificate covering
+  `localhost` and `127.0.0.1` can be reused without installing mkcert.
 
 ## 4. Sideload into Excel for Windows
 
@@ -122,6 +131,17 @@ controls or import the XML as Excel's legacy XML Expansion Pack.
    with a trivial disposable-cell edit. User confirmation remains optional.
 6. Check workbook history/recovery, then repeat a request after disabling
    the API. The add-in must not fall back to a public model.
+7. In `python_excel`, run the following safe origin check:
+
+   ```python
+   from js import location
+   result = {"python_origin": str(location.origin)}
+   ```
+
+   The reported value must be `https://localhost:3142`, **not** the
+   taskpane origin `https://127.0.0.1:3141`. Then repeat the synthetic
+   pandas read → new-sheet write test. A missing iframe or Worker error is
+   a failed test; do not enable a same-origin fallback.
 
 The model names may be visible without a working API if a saved catalogue
 exists; that alone does not prove the endpoint or CORS integration works.
@@ -146,8 +166,12 @@ origin/path from the WebView's developer tools and review it before permitting
 it. Do **not** disable CSP or add wildcard `connect-src` rules to make a
 confidential-data test appear to work.
 
-**Known gaps:** A successful Windows Excel WebView2 end-to-end Python smoke test
-is still outstanding. Chromium CI checks do not establish WebView2 parity.
+**Known gaps:** Earlier Windows Excel Python/pandas processing and overwrite
+protection succeeded with the original same-origin Worker. The new isolated
+runner still requires a fresh end-to-end acceptance on Windows Excel WebView2,
+including loading `https://localhost:3142/enterprise-runner.html`, a pandas
+read/transform/write test and a synthetic same-origin storage denial.
+Chromium CI checks do not establish WebView2 parity.
 The full set of browser transports and extension-adjacent paths is not a
 certified egress boundary. Review dependencies, API-key persistence and
 organizational controls before authorizing confidential workbooks.

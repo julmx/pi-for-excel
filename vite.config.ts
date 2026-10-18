@@ -278,6 +278,7 @@ export default defineConfig({
       input: {
         taskpane: "src/taskpane.html",
         "ui-gallery": "src/ui-gallery.html",
+        ...(process.env.VITE_PI_ENTERPRISE_MODE === "true" ? { "enterprise-runner": "enterprise-runner.html" } : {}),
       },
       // Externalize node:* imports (Rollup can't bundle them for the browser).
       // Note: do NOT externalize regular deps (e.g. @smithy/*). If they leak

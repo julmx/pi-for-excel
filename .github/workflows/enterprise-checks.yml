@@ -40,6 +40,9 @@ jobs:
         env:
           VITE_PI_ENTERPRISE_MODE: "true"
           VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
+          # Browser CI uses loopback HTTP; production defaults to HTTPS.
+          VITE_PI_ENTERPRISE_TASKPANE_ORIGIN: http://127.0.0.1:3141
+          VITE_PI_ENTERPRISE_RUNNER_ORIGIN: http://localhost:3142
         run: npm run build
       - name: Smoke-test bundled Python, NumPy and pandas
         run: node scripts/smoke-enterprise-pyodide.mjs
@@ -47,6 +50,8 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: Exercise built Python Worker and Excel RPC in Chromium
         run: node scripts/smoke-enterprise-python-browser.mjs
+      - name: Confirm isolated Python cannot read taskpane IndexedDB (Linux)
+        run: node scripts/smoke-enterprise-isolated-runner.mjs
       - name: Generate local Windows sideload manifest
         run: npm run manifest:enterprise:local
 
@@ -81,8 +86,13 @@ jobs:
         env:
           VITE_PI_ENTERPRISE_MODE: "true"
           VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
+          # Browser CI uses loopback HTTP; production defaults to HTTPS.
+          VITE_PI_ENTERPRISE_TASKPANE_ORIGIN: http://127.0.0.1:3141
+          VITE_PI_ENTERPRISE_RUNNER_ORIGIN: http://localhost:3142
         run: npm run build
       - name: Install Chromium for Windows Worker smoke
         run: npx playwright install chromium
       - name: Run Python Excel Worker in Windows Chromium
         run: node scripts/smoke-enterprise-python-browser.mjs
+      - name: Confirm isolated Python cannot read taskpane IndexedDB (Windows)
+        run: node scripts/smoke-enterprise-isolated-runner.mjs
