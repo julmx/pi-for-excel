@@ -6,8 +6,8 @@
  * A per-run MessagePort is the sole communication capability; only the
  * parent taskpane performs the allowlisted Excel tool calls.
  */
-const TASKPANE_ORIGIN = "https://127.0.0.1:3141";
-const RUNNER_ORIGIN = "https://localhost:3141";
+const TASKPANE_ORIGIN = import.meta.env.VITE_PI_ENTERPRISE_TASKPANE_ORIGIN ?? "https://127.0.0.1:3141";
+const RUNNER_ORIGIN = import.meta.env.VITE_PI_ENTERPRISE_RUNNER_ORIGIN ?? "https://localhost:3141";
 
 interface ConnectMessage { type: "enterprise-python-connect"; id: string; nonce: string }
 interface PortMessage { type: "run" | "excel-result"; id: string; nonce: string; payload: unknown }
