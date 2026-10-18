@@ -128,6 +128,17 @@ controls or import the XML as Excel's legacy XML Expansion Pack.
    with a trivial disposable-cell edit. User confirmation remains optional.
 6. Check workbook history/recovery, then repeat a request after disabling
    the API. The add-in must not fall back to a public model.
+7. In `python_excel`, run the following safe origin check:
+
+   ```python
+   from js import location
+   result = {"python_origin": str(location.origin)}
+   ```
+
+   The reported value must be `https://127.0.0.2:3142`, **not** the
+   taskpane origin `https://127.0.0.1:3141`. Then repeat the synthetic
+   pandas read → new-sheet write test. A missing iframe or Worker error is
+   a failed test; do not enable a same-origin fallback.
 
 The model names may be visible without a working API if a saved catalogue
 exists; that alone does not prove the endpoint or CORS integration works.
