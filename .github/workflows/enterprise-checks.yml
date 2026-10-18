@@ -42,7 +42,7 @@ jobs:
           VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
           # Browser CI uses loopback HTTP; production defaults to HTTPS.
           VITE_PI_ENTERPRISE_TASKPANE_ORIGIN: http://127.0.0.1:3141
-          VITE_PI_ENTERPRISE_RUNNER_ORIGIN: http://localhost:3142
+          VITE_PI_ENTERPRISE_RUNNER_ORIGIN: http://127.0.0.2:3142
         run: npm run build
       - name: Smoke-test bundled Python, NumPy and pandas
         run: node scripts/smoke-enterprise-pyodide.mjs
@@ -88,7 +88,7 @@ jobs:
           VITE_PI_ENTERPRISE_API_BASE_URL: https://api.example.invalid/llm/v1
           # Browser CI uses loopback HTTP; production defaults to HTTPS.
           VITE_PI_ENTERPRISE_TASKPANE_ORIGIN: http://127.0.0.1:3141
-          VITE_PI_ENTERPRISE_RUNNER_ORIGIN: http://localhost:3142
+          VITE_PI_ENTERPRISE_RUNNER_ORIGIN: http://127.0.0.2:3142
         run: npm run build
       - name: Install Chromium for Windows Worker smoke
         run: npx playwright install chromium
