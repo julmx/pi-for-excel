@@ -49,17 +49,17 @@ Local HTTPS certificates are missing. Install mkcert, then run these commands
 from the repository root (the CA installation may require IT approval):
 
   mkcert -install
-  mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 127.0.0.2
+  mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1
 
 Certificates stay on your machine and are ignored by Git.
 "@
     }
 
-    # An older local certificate can be valid for the taskpane but not for
-    # the new runner IP. Reject it now rather than timing out inside Excel.
-    & node -e 'const fs=require("node:fs"); const {X509Certificate}=require("node:crypto"); const cert=new X509Certificate(fs.readFileSync("cert.pem")); if(cert.checkIP("127.0.0.1") !== "127.0.0.1" || cert.checkIP("127.0.0.2") !== "127.0.0.2") process.exit(1)'
+    # Reuse the existing local certificate only if it covers both the
+    # taskpane IP and the runner hostname; no certificate regeneration needed.
+    & node -e 'const fs=require("node:fs"); const {X509Certificate}=require("node:crypto"); const cert=new X509Certificate(fs.readFileSync("cert.pem")); if(cert.checkIP("127.0.0.1") !== "127.0.0.1" || cert.checkHost("localhost") !== "localhost") process.exit(1)'
     if ($LASTEXITCODE -ne 0) {
-        throw "Local cert.pem must cover 127.0.0.1 and 127.0.0.2. Regenerate it with: mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 127.0.0.2"
+        throw "Local cert.pem must cover 127.0.0.1 and localhost. Use an approved certificate if either hostname is missing."
     }
 
     if (-not $SkipInstall) {
@@ -74,7 +74,7 @@ Certificates stay on your machine and are ignored by Git.
     $env:VITE_PI_ENTERPRISE_LOCAL_API_RELAY = if ($UseLocalApiRelay) { "true" } else { "false" }
     # Override inherited developer/CI values: the local origins are fixed.
     $env:VITE_PI_ENTERPRISE_TASKPANE_ORIGIN = "https://127.0.0.1:3141"
-    $env:VITE_PI_ENTERPRISE_RUNNER_ORIGIN = "https://127.0.0.2:3142"
+    $env:VITE_PI_ENTERPRISE_RUNNER_ORIGIN = "https://localhost:3142"
     Invoke-Checked -Executable "npm.cmd" -Arguments @("run", "build")
 
     Invoke-Checked -Executable "node" -Arguments @("scripts/generate-enterprise-local-manifest.mjs")
@@ -89,7 +89,7 @@ Certificates stay on your machine and are ignored by Git.
     Write-Host "Local enterprise Pi for Excel is ready for a synthetic-data test."
     Write-Host "Manifest: $root\manifest.enterprise.local.xml"
     Write-Host "Taskpane: https://127.0.0.1:3141/src/taskpane.html"
-    Write-Host "Isolated Python runner: https://127.0.0.2:3142/enterprise-runner.html"
+    Write-Host "Isolated Python runner: https://localhost:3142/enterprise-runner.html"
     Write-Host "Approved API: $($env:ENTERPRISE_API_BASE_URL)"
     Write-Host "Local API relay enabled: $($UseLocalApiRelay.IsPresent)"
     Write-Host "Keep this terminal open and load the manifest via Excel > Add-ins."
