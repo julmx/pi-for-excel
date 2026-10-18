@@ -254,6 +254,105 @@ except RuntimeError as error:
   assert.equal(blocked.requests[0].tool, "write_cells");
   assert.equal(blocked.requests[0].params.start_cell, "Source!A1");
   assert.deepEqual(blocked.requests[0].params.values, [["SHOULD_NOT_OVERWRITE"]]);
+  // Characterization of the CURRENT security boundary, not an endorsement:
+  // model-generated Python should not be assumed confined to the Excel RPC.
+  // Create ONLY a synthetic origin-scoped database; never inspect user or
+  // enterprise storage, credentials, sessions or workbook contents.
+  const isolationProbe = await page.evaluate(async (file) => {
+    const databaseName = "__pi_synthetic_worker_isolation_probe";
+    const marker = "SYNTHETIC_CANARY_NOT_A_SECRET";
+    const opened = indexedDB.open(databaseName, 1);
+    opened.onupgradeneeded = () => {
+      if (!opened.result.objectStoreNames.contains("synthetic")) {
+        opened.result.createObjectStore("synthetic");
+      }
+    };
+    const db = await new Promise((resolve, reject) => {
+      opened.onsuccess = () => resolve(opened.result);
+      opened.onerror = () => reject(opened.error ?? new Error("Synthetic DB open failed"));
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction("synthetic", "readwrite");
+        transaction.objectStore("synthetic").put(marker, "marker");
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? new Error("Synthetic write failed"));
+      });
+    } finally {
+      db.close();
+    }
+
+    const python = [
+      "import asyncio",
+      "from js import indexedDB",
+      "from pyodide.ffi import create_proxy",
+      "async def _read_idb_request(request):",
+      "    future = asyncio.get_running_loop().create_future()",
+      "    def on_success(_event):",
+      "        if not future.done(): future.set_result(request.result)",
+      "    def on_error(_event):",
+      "        if not future.done(): future.set_exception(RuntimeError('Synthetic IndexedDB request failed'))",
+      "    success = create_proxy(on_success)",
+      "    error = create_proxy(on_error)",
+      "    request.addEventListener('success', success)",
+      "    request.addEventListener('error', error)",
+      "    try:",
+      "        return await future",
+      "    finally:",
+      "        request.removeEventListener('success', success)",
+      "        request.removeEventListener('error', error)",
+      "        success.destroy()",
+      "        error.destroy()",
+      "_database = await _read_idb_request(indexedDB.open('__pi_synthetic_worker_isolation_probe'))",
+      "try:",
+      "    _transaction = _database.transaction('synthetic', 'readonly')",
+      "    _value = await _read_idb_request(_transaction.objectStore('synthetic').get('marker'))",
+      "    result = {'can_access_worker_indexeddb': True, 'synthetic_canary': str(_value)}",
+      "finally:",
+      "    _database.close()",
+    ].join("\n");
+
+    try {
+      return await new Promise((resolve, reject) => {
+        const worker = new Worker("/assets/" + file, { type: "module" });
+        const timeout = setTimeout(() => {
+          worker.terminate();
+          reject(new Error("Synthetic worker isolation probe timed out."));
+        }, 120_000);
+        worker.addEventListener("error", (error) => {
+          clearTimeout(timeout);
+          worker.terminate();
+          reject(new Error("Synthetic worker isolation probe crashed: " + error.message));
+        });
+        worker.addEventListener("message", (event) => {
+          if (event.data.type !== "done") return;
+          clearTimeout(timeout);
+          worker.terminate();
+          resolve(event.data);
+        });
+        worker.postMessage({ type: "run", id: "synthetic-worker-isolation-probe", code: python });
+      });
+    } finally {
+      // Remove the *only* database created by this diagnostic. Deleting this
+      // synthetic name never touches the application's "pi-for-excel" DB.
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(databaseName);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error ?? new Error("Synthetic DB cleanup failed"));
+        request.onblocked = () => reject(new Error("Synthetic DB cleanup was blocked"));
+      });
+    }
+  }, workerFile);
+  assert.equal(isolationProbe.ok, true, isolationProbe.error ?? "Synthetic isolation probe failed");
+  // The current same-origin design exposes this browser storage capability.
+  // Replace this characterization with a DENIAL assertion when isolation is
+  // implemented; do not mistake this passing test for a security guarantee.
+  assert.deepEqual(JSON.parse(isolationProbe.resultJson), {
+    can_access_worker_indexeddb: true,
+    synthetic_canary: "SYNTHETIC_CANARY_NOT_A_SECRET",
+  });
+  console.log("Security characterization: Python can read synthetic same-origin IndexedDB.");
+
   assert.deepEqual(errors, []);
   console.log("Browser smoke passed: Python stdout/stderr, errors, Excel RPC and results.");
 } finally {
