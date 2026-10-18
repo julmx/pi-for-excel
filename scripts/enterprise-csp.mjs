@@ -4,7 +4,7 @@
  * meta tag. The endpoint value is the non-secret API base URL.
  */
 export const ENTERPRISE_LOCAL_TASKPANE_ORIGIN = "https://127.0.0.1:3141";
-export const ENTERPRISE_LOCAL_RUNNER_ORIGIN = "https://127.0.0.2:3142";
+export const ENTERPRISE_LOCAL_RUNNER_ORIGIN = "https://localhost:3142";
 
 export function buildEnterpriseContentSecurityPolicy(apiBaseUrl, runnerOrigin = null) {
   if (!apiBaseUrl || typeof apiBaseUrl !== "string") {
@@ -37,7 +37,7 @@ export function buildEnterpriseContentSecurityPolicy(apiBaseUrl, runnerOrigin = 
 }
 
 /**
- * Applied ONLY on the dedicated 127.0.0.2 runner origin, never on the taskpane.
+ * Applied ONLY on the dedicated localhost runner origin, never on the taskpane.
  * No model gateway, Office.js CDN, API relay, or navigation is permitted.
  */
 export function buildEnterprisePythonRunnerCsp(worker = false) {
