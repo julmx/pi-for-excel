@@ -9,7 +9,7 @@ import { buildEnterpriseContentSecurityPolicy, buildEnterprisePythonRunnerCsp } 
 
 const port = 3141;
 const parent = "http://127.0.0.1:" + port;
-const runner = "http://localhost:" + (port + 1);
+const runner = "http://127.0.0.2:" + (port + 1);
 const canaryName = "__pi_synthetic_worker_isolation_probe";
 const parentCsp = buildEnterpriseContentSecurityPolicy("https://api.example.invalid/v1", runner);
 const runnerCsp = buildEnterprisePythonRunnerCsp().replace("https://127.0.0.1:3141", parent);
@@ -17,7 +17,7 @@ const workerCsp = buildEnterprisePythonRunnerCsp(true).replace("https://127.0.0.
 const dist = path.resolve("dist");
 
 const serve = async (req, res) => {
-  const isolated = req.headers.host === "localhost:" + (port + 1)
+  const isolated = req.headers.host === "127.0.0.2:" + (port + 1)
     && req.socket.localPort === port + 1;
   const pathname = new URL(req.url ?? "/", parent).pathname;
   if (isolated && !(pathname === "/enterprise-runner.html"
@@ -63,7 +63,7 @@ await Promise.all([
   }),
   new Promise((resolve, reject) => {
     runnerServer.once("error", reject);
-    runnerServer.listen(port + 1, "127.0.0.1", resolve);
+    runnerServer.listen(port + 1, "127.0.0.2", resolve);
   }),
 ]);
 let browser;
