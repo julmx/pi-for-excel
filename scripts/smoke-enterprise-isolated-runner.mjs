@@ -110,6 +110,11 @@ try {
       "await excel.create_sheet('Result')",
       "await excel.write('Result!A1', [list(df.columns)] + df.values.tolist())",
       "result['rows'] = len(df)",
+      "try:",
+      "    await excel.write('Source!A1', [['DO_NOT_OVERWRITE']])",
+      "    result['blocked_error'] = False",
+      "except RuntimeError:",
+      "    result['blocked_error'] = True",
     ].join("\n");
 
     const requests = [];
@@ -148,12 +153,16 @@ try {
               ? { details: { kind: "read_range_csv", values: [["Name", "Amount"], ["Example", 42]] } }
               : { content: [{ type: "text", text: "Synthetic Excel result" }] };
             const permitted = ["read_range", "modify_structure", "write_cells"].includes(tool);
+            const blocked = tool === "write_cells"
+              && payload.request.params.start_cell === "Source!A1";
             port.postMessage({
               type: "excel-result", id, nonce,
               payload: { type: "excel-result", callId: payload.callId,
-                response: JSON.stringify(permitted
-                  ? { id: payload.callId, ok: true, result }
-                  : { id: payload.callId, ok: false, error: "Not permitted" }) },
+                response: JSON.stringify(blocked
+                  ? { id: payload.callId, ok: false, error: "Write blocked" }
+                  : permitted
+                    ? { id: payload.callId, ok: true, result }
+                    : { id: payload.callId, ok: false, error: "Not permitted" }) },
             });
           } else if (m.type === "forward" && m.payload.type === "done") {
             cleanup();
@@ -180,9 +189,9 @@ try {
 
   assert.equal(test.response.ok, true, test.response.error);
   assert.deepEqual(JSON.parse(test.response.resultJson), {
-    runner_origin: runner, sees_parent_database: false, rows: 1,
+    runner_origin: runner, sees_parent_database: false, rows: 1, blocked_error: true,
   });
-  assert.deepEqual(test.requests, ["read_range", "modify_structure", "write_cells"]);
+  assert.deepEqual(test.requests, ["read_range", "modify_structure", "write_cells", "write_cells"]);
   assert.deepEqual(errors, []);
   console.log("Isolated enterprise runner: taskpane IndexedDB denied, pandas + Excel RPC passed.");
 } finally {
