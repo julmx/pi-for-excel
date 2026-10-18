@@ -26,11 +26,11 @@ void test("enterprise CSP rejects non-HTTPS URLs and embedded credentials", () =
 
 void test("isolated runner CSP never receives model gateway access", () => {
   const parent = buildEnterpriseContentSecurityPolicy(
-    "https://private.example.invalid/v1", "https://localhost:3142",
+    "https://private.example.invalid/v1", "https://127.0.0.2:3142",
   );
   const runner = buildEnterprisePythonRunnerCsp();
   const worker = buildEnterprisePythonRunnerCsp(true);
-  assert.match(parent, /frame-src https:\/\/localhost:3142/u);
+  assert.match(parent, /frame-src https:\/\/127.0.0.2:3142/u);
   assert.match(runner, /frame-ancestors https:\/\/127\.0\.0\.1:3141/u);
   assert.match(runner, /connect-src 'self'/u);
   assert.match(worker, /worker-src 'none'/u);
