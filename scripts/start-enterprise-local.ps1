@@ -49,10 +49,17 @@ Local HTTPS certificates are missing. Install mkcert, then run these commands
 from the repository root (the CA installation may require IT approval):
 
   mkcert -install
-  mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1
+  mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 127.0.0.2
 
 Certificates stay on your machine and are ignored by Git.
 "@
+    }
+
+    # An older local certificate can be valid for the taskpane but not for
+    # the new runner IP. Reject it now rather than timing out inside Excel.
+    & node -e 'const fs=require("node:fs"); const {X509Certificate}=require("node:crypto"); const cert=new X509Certificate(fs.readFileSync("cert.pem")); if(cert.checkIP("127.0.0.1") !== "127.0.0.1" || cert.checkIP("127.0.0.2") !== "127.0.0.2") process.exit(1)'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Local cert.pem must cover 127.0.0.1 and 127.0.0.2. Regenerate it with: mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 127.0.0.2"
     }
 
     if (-not $SkipInstall) {
