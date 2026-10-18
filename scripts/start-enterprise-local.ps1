@@ -79,6 +79,7 @@ Certificates stay on your machine and are ignored by Git.
     Write-Host "Local enterprise Pi for Excel is ready for a synthetic-data test."
     Write-Host "Manifest: $root\manifest.enterprise.local.xml"
     Write-Host "Taskpane: https://127.0.0.1:3141/src/taskpane.html"
+    Write-Host "Isolated Python runner: https://localhost:3142/enterprise-runner.html"
     Write-Host "Approved API: $($env:ENTERPRISE_API_BASE_URL)"
     Write-Host "Local API relay enabled: $($UseLocalApiRelay.IsPresent)"
     Write-Host "Keep this terminal open and load the manifest via Excel > Add-ins."
