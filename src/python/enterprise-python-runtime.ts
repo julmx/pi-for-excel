@@ -12,7 +12,7 @@ const configuredRunnerOrigin: unknown = import.meta.env?.VITE_PI_ENTERPRISE_RUNN
 const TASKPANE_ORIGIN = typeof configuredTaskpaneOrigin === "string"
   ? configuredTaskpaneOrigin : "https://127.0.0.1:3141";
 const RUNNER_ORIGIN = typeof configuredRunnerOrigin === "string"
-  ? configuredRunnerOrigin : "https://localhost:3141";
+  ? configuredRunnerOrigin : "https://localhost:3142";
 
 interface RunMessage { type: "run"; id: string; code: string }
 interface ExcelCallMessage { type: "excel-call"; id: string; callId: string; request: EnterpriseExcelOperation }
