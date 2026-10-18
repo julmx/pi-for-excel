@@ -1,7 +1,7 @@
 /**
  * One-run, cross-origin relay for the existing enterprise Pyodide Worker.
  *
- * This page is ONLY served from https://localhost:3142 and framed by
+ * This page is ONLY served from https://127.0.0.2:3142 and framed by
  * https://127.0.0.1:3141. It has no provider credentials or Excel API.
  * A per-run MessagePort is the sole communication capability; only the
  * parent taskpane performs the allowlisted Excel tool calls.
@@ -11,7 +11,7 @@ const configuredRunnerOrigin: unknown = import.meta.env?.VITE_PI_ENTERPRISE_RUNN
 const TASKPANE_ORIGIN = typeof configuredTaskpaneOrigin === "string"
   ? configuredTaskpaneOrigin : "https://127.0.0.1:3141";
 const RUNNER_ORIGIN = typeof configuredRunnerOrigin === "string"
-  ? configuredRunnerOrigin : "https://localhost:3142";
+  ? configuredRunnerOrigin : "https://127.0.0.2:3142";
 
 interface ConnectMessage { type: "enterprise-python-connect"; id: string; nonce: string }
 interface PortMessage { type: "run" | "excel-result"; id: string; nonce: string; payload: unknown }
