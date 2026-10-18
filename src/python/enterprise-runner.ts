@@ -6,8 +6,8 @@
  * A per-run MessagePort is the sole communication capability; only the
  * parent taskpane performs the allowlisted Excel tool calls.
  */
-const configuredTaskpaneOrigin: unknown = import.meta.env.VITE_PI_ENTERPRISE_TASKPANE_ORIGIN;
-const configuredRunnerOrigin: unknown = import.meta.env.VITE_PI_ENTERPRISE_RUNNER_ORIGIN;
+const configuredTaskpaneOrigin: unknown = import.meta.env?.VITE_PI_ENTERPRISE_TASKPANE_ORIGIN;
+const configuredRunnerOrigin: unknown = import.meta.env?.VITE_PI_ENTERPRISE_RUNNER_ORIGIN;
 const TASKPANE_ORIGIN = typeof configuredTaskpaneOrigin === "string"
   ? configuredTaskpaneOrigin : "https://127.0.0.1:3141";
 const RUNNER_ORIGIN = typeof configuredRunnerOrigin === "string"
