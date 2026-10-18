@@ -2,7 +2,7 @@
  * Run enterprise Python through an iframe on an isolated HTTPS origin.
  *
  * A normal Web Worker shares its creator's origin and IndexedDB. The runner
- * page lives on localhost while Excel and its credentials live on 127.0.0.1.
+ * page lives on 127.0.0.2 while Excel and its credentials live on 127.0.0.1.
  * No same-origin fallback: a missing runner must fail closed.
  */
 import type { EnterpriseExcelOperation, EnterpriseExcelOperationResponse } from "./enterprise-excel-bridge.js";
