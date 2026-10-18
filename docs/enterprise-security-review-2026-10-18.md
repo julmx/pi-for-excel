@@ -76,7 +76,7 @@ The outer workbook coordinator serializes the `python_excel` tool and obtains on
 
 ## Upstream divergence snapshot
 
-GitHub compare `tmustier/main...julmx/main`: **189 fork-side commits** and **5 upstream-side commits** not shared at the reviewed refs; 53 changed files returned. This does *not* mean the fork reimplemented the original project: the majority of upstream Excel tools, UI and original Python implementation remain intact. The fork reports `0.10.0-pre`; upstream `main` reports `0.11.1-pre`.
+GitHub compare `tmustier/main...julmx/main`: **189 fork-side commits** and **5 upstream-side commits** not shared at the reviewed refs; 53 changed files returned. This does *not* mean the fork reimplemented the original project: the majority of upstream Excel tools, UI and original Python implementation remain intact. The fork reports `0.10.0-pre` with Pi AI/Agent Core `0.87.0`; upstream `main` reports `0.11.1-pre` with Pi AI/Agent Core `1.3.0`. These major runtime differences warrant compatibility tests before selective upstream updates.
 
 | Difference | Justification / assessment |
 | --- | --- |
