@@ -49,7 +49,7 @@ From the repository root, after approval to trust a development CA:
 
 ```powershell
 mkcert -install
-mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1
+mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 127.0.0.2
 ```
 
 Keep `cert.pem` and especially `key.pem` **on the local machine**. Both
@@ -89,7 +89,7 @@ Notes:
 - No separately installed Python, tmux, MCP or external proxy server is needed.
   Enterprise Python runs through bundled Pyodide in an isolated-origin Worker.
   The same Node process serves both `https://127.0.0.1:3141` (Excel taskpane)
-  and `https://localhost:3142` (minimal Python runner). They are distinct
+  and `https://127.0.0.2:3142` (minimal Python runner). They are distinct
   browser origins with separate IndexedDB storage. Port 3142 must also be free The `localhost` runner
   cannot use the API relay, and the taskpane may frame only that runner origin.
   The local certificate must cover both names (see mkcert step above).
@@ -154,7 +154,7 @@ confidential-data test appear to work.
 **Known gaps:** Earlier Windows Excel Python/pandas processing and overwrite
 protection succeeded with the original same-origin Worker. The new isolated
 runner still requires a fresh end-to-end acceptance on Windows Excel WebView2,
-including loading `https://localhost:3142/enterprise-runner.html`, a pandas
+including loading `https://127.0.0.2:3142/enterprise-runner.html`, a pandas
 read/transform/write test and a synthetic same-origin storage denial.
 Chromium CI checks do not establish WebView2 parity.
 The full set of browser transports and extension-adjacent paths is not a
