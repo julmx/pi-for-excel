@@ -30,10 +30,14 @@ behavior.
 
 ## What the prototype currently restricts
 
-- **Agent tools:** Only reviewed, first-party Excel operations are constructed
-  and exposed to the agent. Python, terminal, arbitrary Office.js, MCP, web
-  search, external integrations, skills and extension tools are excluded.
-  Other runtime entry points still require an audit.
+- **Agent tools:** Only reviewed, first-party Excel operations and the
+  enterprise-only `python_excel` tool are exposed to the agent. The Python
+  Worker reuses these Excel tools through allowlisted RPC; terminal, native
+  Python bridges, arbitrary Office.js, MCP, web search, external integrations,
+  skills and extension tools remain excluded from the restricted agent surface.
+  Python itself is **not a security sandbox**: same-origin Worker JavaScript
+  and IndexedDB access need isolation before confidential workbook use.
+  See [the focused 2026-10-18 security review](./enterprise-security-review-2026-10-18.md).
 - **Extensions and local bridges:** Enterprise startup disables persisted
   extension loading and installation/activation through the extension manager.
   The extension, add-on, tools, skills, files, experimental and debug slash
@@ -110,6 +114,11 @@ execution, and API failure. Confirm that there is **no fallback** to a public
 LLM or proxy if the corporate API or credential fails.
 
 ## Known gaps before production
+
+A focused [code-level review dated 2026-10-18](./enterprise-security-review-2026-10-18.md)
+documents the current Python Worker storage boundary, resource and payload
+limits, build integrity, local relay and upstream maintenance gaps. It is
+not a penetration test or production approval.
 
 1. A `fetch` interceptor is not a security boundary. Other transports
    (XHR, WebSockets, resources loaded by the browser, captured references,
