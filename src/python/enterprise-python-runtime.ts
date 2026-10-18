@@ -7,8 +7,12 @@
  */
 import type { EnterpriseExcelOperation, EnterpriseExcelOperationResponse } from "./enterprise-excel-bridge.js";
 
-const TASKPANE_ORIGIN = import.meta.env.VITE_PI_ENTERPRISE_TASKPANE_ORIGIN ?? "https://127.0.0.1:3141";
-const RUNNER_ORIGIN = import.meta.env.VITE_PI_ENTERPRISE_RUNNER_ORIGIN ?? "https://localhost:3141";
+const configuredTaskpaneOrigin: unknown = import.meta.env.VITE_PI_ENTERPRISE_TASKPANE_ORIGIN;
+const configuredRunnerOrigin: unknown = import.meta.env.VITE_PI_ENTERPRISE_RUNNER_ORIGIN;
+const TASKPANE_ORIGIN = typeof configuredTaskpaneOrigin === "string"
+  ? configuredTaskpaneOrigin : "https://127.0.0.1:3141";
+const RUNNER_ORIGIN = typeof configuredRunnerOrigin === "string"
+  ? configuredRunnerOrigin : "https://localhost:3141";
 
 interface RunMessage { type: "run"; id: string; code: string }
 interface ExcelCallMessage { type: "excel-call"; id: string; callId: string; request: EnterpriseExcelOperation }
