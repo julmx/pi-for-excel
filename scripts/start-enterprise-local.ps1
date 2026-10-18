@@ -57,7 +57,9 @@ Certificates stay on your machine and are ignored by Git.
 
     # Reuse the existing local certificate only if it covers both the
     # taskpane IP and the runner hostname; no certificate regeneration needed.
-    & node -e 'const fs=require("node:fs"); const {X509Certificate}=require("node:crypto"); const cert=new X509Certificate(fs.readFileSync("cert.pem")); if(cert.checkIP("127.0.0.1") !== "127.0.0.1" || cert.checkHost("localhost") !== "localhost") process.exit(1)'
+    # PowerShell passes single quotes inside a double-quoted argument intact
+    # to the Windows Node executable (unlike double quotes inside single quotes).
+    & node -e "const fs=require('node:fs'); const {X509Certificate}=require('node:crypto'); const cert=new X509Certificate(fs.readFileSync('cert.pem')); if(cert.checkIP('127.0.0.1') !== '127.0.0.1' || cert.checkHost('localhost') !== 'localhost') process.exit(1)"
     if ($LASTEXITCODE -ne 0) {
         throw "Local cert.pem must cover 127.0.0.1 and localhost. Use an approved certificate if either hostname is missing."
     }
