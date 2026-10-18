@@ -49,7 +49,7 @@ From the repository root, after approval to trust a development CA:
 
 ```powershell
 mkcert -install
-mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 127.0.0.2
+mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1
 ```
 
 Keep `cert.pem` and especially `key.pem` **on the local machine**. Both
@@ -89,11 +89,14 @@ Notes:
 - No separately installed Python, tmux, MCP or external proxy server is needed.
   Enterprise Python runs through bundled Pyodide in an isolated-origin Worker.
   The same Node process serves both `https://127.0.0.1:3141` (Excel taskpane)
-  and `https://127.0.0.2:3142` (minimal Python runner). They are distinct
-  browser origins with separate IndexedDB storage and host-scoped cookies.
+  and `https://localhost:3142` (minimal Python runner). They are distinct
+  browser origins with separate IndexedDB storage. Taskpane cookies for
+  `127.0.0.1` are not shared with `localhost`, but older applications hosted
+  under `localhost` may have left cookies shared across ports. This prototype
+  remains restricted to synthetic testing until that exposure is reviewed.
   Port 3142 must be available. The runner cannot use the API relay, and the
-  taskpane may frame only that runner origin. Regenerate old certificates to
-  include `127.0.0.2` (see mkcert command above).
+  taskpane may frame only that runner origin. The existing certificate covering
+  `localhost` and `127.0.0.1` can be reused without installing mkcert.
 
 ## 4. Sideload into Excel for Windows
 
@@ -135,7 +138,7 @@ controls or import the XML as Excel's legacy XML Expansion Pack.
    result = {"python_origin": str(location.origin)}
    ```
 
-   The reported value must be `https://127.0.0.2:3142`, **not** the
+   The reported value must be `https://localhost:3142`, **not** the
    taskpane origin `https://127.0.0.1:3141`. Then repeat the synthetic
    pandas read → new-sheet write test. A missing iframe or Worker error is
    a failed test; do not enable a same-origin fallback.
@@ -166,7 +169,7 @@ confidential-data test appear to work.
 **Known gaps:** Earlier Windows Excel Python/pandas processing and overwrite
 protection succeeded with the original same-origin Worker. The new isolated
 runner still requires a fresh end-to-end acceptance on Windows Excel WebView2,
-including loading `https://127.0.0.2:3142/enterprise-runner.html`, a pandas
+including loading `https://localhost:3142/enterprise-runner.html`, a pandas
 read/transform/write test and a synthetic same-origin storage denial.
 Chromium CI checks do not establish WebView2 parity.
 The full set of browser transports and extension-adjacent paths is not a
