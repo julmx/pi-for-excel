@@ -72,6 +72,9 @@ Certificates stay on your machine and are ignored by Git.
     $env:VITE_PI_ENTERPRISE_MODE = "true"
     $env:VITE_PI_ENTERPRISE_API_BASE_URL = $ApiBaseUrl.TrimEnd("/")
     $env:VITE_PI_ENTERPRISE_LOCAL_API_RELAY = if ($UseLocalApiRelay) { "true" } else { "false" }
+    # Override inherited developer/CI values: the local origins are fixed.
+    $env:VITE_PI_ENTERPRISE_TASKPANE_ORIGIN = "https://127.0.0.1:3141"
+    $env:VITE_PI_ENTERPRISE_RUNNER_ORIGIN = "https://127.0.0.2:3142"
     Invoke-Checked -Executable "npm.cmd" -Arguments @("run", "build")
 
     Invoke-Checked -Executable "node" -Arguments @("scripts/generate-enterprise-local-manifest.mjs")
