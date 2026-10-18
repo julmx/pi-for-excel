@@ -10,6 +10,9 @@ import { buildEnterpriseContentSecurityPolicy, buildEnterprisePythonRunnerCsp } 
 const port = 3141;
 const parent = "http://127.0.0.1:" + port;
 const runner = "http://localhost:" + (port + 1);
+// Local, synthetic-only destination: no remote host and no sensitive data.
+const syntheticSink = "http://127.0.0.1:" + (port + 2);
+let syntheticSinkHits = 0;
 const canaryName = "__pi_synthetic_worker_isolation_probe";
 const parentCsp = buildEnterpriseContentSecurityPolicy("https://api.example.invalid/v1", runner);
 const runnerCsp = buildEnterprisePythonRunnerCsp().replace("https://127.0.0.1:3141", parent);
@@ -56,6 +59,13 @@ const serve = async (req, res) => {
 };
 const server = createServer(serve);
 const runnerServer = createServer(serve);
+const syntheticSinkServer = createServer((_req, res) => {
+  // A request reaching this server is a security failure even if CORS later
+  // prevents the worker from inspecting the response.
+  syntheticSinkHits += 1;
+  res.writeHead(204);
+  res.end();
+});
 await Promise.all([
   new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -65,6 +75,10 @@ await Promise.all([
     runnerServer.once("error", reject);
     runnerServer.listen(port + 1, "127.0.0.1", resolve);
   }),
+  new Promise((resolve, reject) => {
+    syntheticSinkServer.once("error", reject);
+    syntheticSinkServer.listen(port + 2, "127.0.0.1", resolve);
+  }),
 ]);
 let browser;
 try {
@@ -72,7 +86,7 @@ try {
   const context = await browser.newContext();
   await context.route("**/*", (route) => {
     const origin = new URL(route.request().url()).origin;
-    if (origin !== parent && origin !== runner) {
+    if (origin !== parent && origin !== runner && origin !== syntheticSink) {
       void route.abort("blockedbyclient");
     } else {
       void route.continue();
@@ -102,7 +116,7 @@ try {
 
     const python = [
       "import pandas as pd",
-      "from js import indexedDB, location",
+      "from js import indexedDB, location, fetch",
       "dbs = await indexedDB.databases()",
       "result = {'runner_origin': str(location.origin), 'sees_parent_database': any(str(db.name) == '__pi_synthetic_worker_isolation_probe' for db in dbs)}",
       "rows = await excel.read('Source!A1:B2')",
@@ -110,6 +124,13 @@ try {
       "await excel.create_sheet('Result')",
       "await excel.write('Result!A1', [list(df.columns)] + df.values.tolist())",
       "result['rows'] = len(df)",
+      // The route explicitly permits requests to our LOCAL test sink. CSP,
+      // rather than Playwright request interception, must reject this fetch.
+      "try:",
+      "    await fetch('http://127.0.0.1:3143/__synthetic_egress?value=NOT_A_SECRET')",
+      "    result['external_fetch_rejected'] = False",
+      "except Exception:",
+      "    result['external_fetch_rejected'] = True",
       "try:",
       "    await excel.write('Source!A1', [['DO_NOT_OVERWRITE']])",
       "    result['blocked_error'] = False",
@@ -189,9 +210,11 @@ try {
 
   assert.equal(test.response.ok, true, test.response.error);
   assert.deepEqual(JSON.parse(test.response.resultJson), {
-    runner_origin: runner, sees_parent_database: false, rows: 1, blocked_error: true,
+    runner_origin: runner, sees_parent_database: false, rows: 1,
+    blocked_error: true, external_fetch_rejected: true,
   });
   assert.deepEqual(test.requests, ["read_range", "modify_structure", "write_cells", "write_cells"]);
+  assert.equal(syntheticSinkHits, 0, "Python attempted to contact the synthetic external host");
   assert.deepEqual(errors, []);
   console.log("Isolated enterprise runner: taskpane IndexedDB denied, pandas + Excel RPC passed.");
 } finally {
@@ -199,5 +222,6 @@ try {
   await Promise.all([
     new Promise((resolve) => server.close(resolve)),
     new Promise((resolve) => runnerServer.close(resolve)),
+    new Promise((resolve) => syntheticSinkServer.close(resolve)),
   ]);
 }
