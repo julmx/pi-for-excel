@@ -87,12 +87,7 @@ function safeJoin(base, reqPath) {
   return full;
 }
 
-const server = https.createServer(
-  {
-    key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath),
-  },
-  (req, res) => {
+const serveRequest = (req, res) => {
     try {
       const remote = req.socket?.remoteAddress;
       if (!isLoopbackAddress(remote)) {
@@ -111,8 +106,8 @@ const server = https.createServer(
       // loopback server/socket, but NOT a browser origin or credential store.
       // Runner host serves only static runner assets, never the API relay.
       const host = req.headers.host?.toLowerCase();
-      const runnerHost = enterpriseCsp && host === "localhost:3141";
-      const taskpaneHost = enterpriseCsp && host === "127.0.0.1:3141";
+      const runnerHost = enterpriseCsp && host === "localhost:3142" && req.socket.localPort === 3142;
+      const taskpaneHost = enterpriseCsp && host === "127.0.0.1:3141" && req.socket.localPort === 3141;
       if (enterpriseCsp && !runnerHost && !taskpaneHost) {
         res.writeHead(403);
         res.end("Unrecognized enterprise host");
@@ -186,8 +181,14 @@ const server = https.createServer(
       console.log(`[serve-dist-https] ${req.method || "GET"} ${req.url || "/"} -> 500`);
       res.end(`server error: ${e instanceof Error ? e.message : String(e)}`);
     }
-  },
-);
+};
+
+const tlsCredentials = {
+  key: fs.readFileSync(keyPath),
+  cert: fs.readFileSync(certPath),
+};
+const server = https.createServer(tlsCredentials, serveRequest);
+const runnerServer = enterpriseCsp ? https.createServer(tlsCredentials, serveRequest) : null;
 
 // Enterprise smoke tests use an IPv4 loopback-only manifest and socket.
 // Other development flows retain the previous listener behavior.
@@ -197,3 +198,11 @@ server.listen(PORT, listenHost, () => {
   const displayHost = listenHost ?? HOST;
   console.log(`[serve-dist-https] https://${displayHost}:${PORT}/src/taskpane.html`);
 });
+
+if (runnerServer) {
+  // A second HTTPS socket in the SAME process: the isolated origin never
+  // reuses historic localhost:3141 IndexedDB or taskpane API cookies.
+  runnerServer.listen(3142, "127.0.0.1", () => {
+    console.log("[serve-dist-https] Python runner: https://localhost:3142/enterprise-runner.html");
+  });
+}
