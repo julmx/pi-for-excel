@@ -90,9 +90,10 @@ Notes:
   Enterprise Python runs through bundled Pyodide in an isolated-origin Worker.
   The same Node process serves both `https://127.0.0.1:3141` (Excel taskpane)
   and `https://127.0.0.2:3142` (minimal Python runner). They are distinct
-  browser origins with separate IndexedDB storage. Port 3142 must also be free The `localhost` runner
-  cannot use the API relay, and the taskpane may frame only that runner origin.
-  The local certificate must cover both names (see mkcert step above).
+  browser origins with separate IndexedDB storage and host-scoped cookies.
+  Port 3142 must be available. The runner cannot use the API relay, and the
+  taskpane may frame only that runner origin. Regenerate old certificates to
+  include `127.0.0.2` (see mkcert command above).
 
 ## 4. Sideload into Excel for Windows
 
