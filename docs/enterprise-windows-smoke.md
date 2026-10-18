@@ -88,9 +88,9 @@ Notes:
   CSP compatibility must be validated in the installed Excel WebView.
 - No separately installed Python, tmux, MCP or external proxy server is needed.
   Enterprise Python runs through bundled Pyodide in an isolated-origin Worker.
-  The same HTTPS server answers both `https://127.0.0.1:3141` (Excel taskpane)
+  The same Node process serves both `https://127.0.0.1:3141` (Excel taskpane)
   and `https://localhost:3142` (minimal Python runner). They are distinct
-  browser origins with separate IndexedDB storage. The `localhost` runner
+  browser origins with separate IndexedDB storage. Port 3142 must also be free The `localhost` runner
   cannot use the API relay, and the taskpane may frame only that runner origin.
   The local certificate must cover both names (see mkcert step above).
 
