@@ -9,15 +9,16 @@ import { buildEnterpriseContentSecurityPolicy, buildEnterprisePythonRunnerCsp } 
 
 const port = 3141;
 const parent = "http://127.0.0.1:" + port;
-const runner = "http://localhost:" + port;
+const runner = "http://localhost:" + (port + 1);
 const canaryName = "__pi_synthetic_worker_isolation_probe";
 const parentCsp = buildEnterpriseContentSecurityPolicy("https://api.example.invalid/v1", runner);
 const runnerCsp = buildEnterprisePythonRunnerCsp().replace("https://127.0.0.1:3141", parent);
 const workerCsp = buildEnterprisePythonRunnerCsp(true).replace("https://127.0.0.1:3141", parent);
 const dist = path.resolve("dist");
 
-const server = createServer(async (req, res) => {
-  const isolated = req.headers.host === "localhost:" + port;
+const serve = async (req, res) => {
+  const isolated = req.headers.host === "localhost:" + (port + 1)
+    && req.socket.localPort === port + 1;
   const pathname = new URL(req.url ?? "/", parent).pathname;
   if (isolated && !(pathname === "/enterprise-runner.html"
       || pathname.startsWith("/assets/") || pathname.startsWith("/enterprise-pyodide/"))) {
@@ -52,11 +53,19 @@ const server = createServer(async (req, res) => {
     res.writeHead(404);
     res.end("not found");
   }
-});
-await new Promise((resolve, reject) => {
-  server.once("error", reject);
-  server.listen(port, "127.0.0.1", resolve);
-});
+};
+const server = createServer(serve);
+const runnerServer = createServer(serve);
+await Promise.all([
+  new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  }),
+  new Promise((resolve, reject) => {
+    runnerServer.once("error", reject);
+    runnerServer.listen(port + 1, "127.0.0.1", resolve);
+  }),
+]);
 let browser;
 try {
   browser = await chromium.launch({ headless: true });
@@ -178,5 +187,8 @@ try {
   console.log("Isolated enterprise runner: taskpane IndexedDB denied, pandas + Excel RPC passed.");
 } finally {
   await browser?.close();
-  await new Promise((resolve) => server.close(resolve));
+  await Promise.all([
+    new Promise((resolve) => server.close(resolve)),
+    new Promise((resolve) => runnerServer.close(resolve)),
+  ]);
 }
