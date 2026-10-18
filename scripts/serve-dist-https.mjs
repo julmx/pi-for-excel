@@ -106,7 +106,7 @@ const serveRequest = (req, res) => {
       // loopback server/socket, but NOT a browser origin or credential store.
       // Runner host serves only static runner assets, never the API relay.
       const host = req.headers.host?.toLowerCase();
-      const runnerHost = enterpriseCsp && host === "localhost:3142" && req.socket.localPort === 3142;
+      const runnerHost = enterpriseCsp && host === "127.0.0.2:3142" && req.socket.localPort === 3142;
       const taskpaneHost = enterpriseCsp && host === "127.0.0.1:3141" && req.socket.localPort === 3141;
       if (enterpriseCsp && !runnerHost && !taskpaneHost) {
         res.writeHead(403);
@@ -202,7 +202,7 @@ server.listen(PORT, listenHost, () => {
 if (runnerServer) {
   // A second HTTPS socket in the SAME process: the isolated origin never
   // reuses historic localhost:3141 IndexedDB or taskpane API cookies.
-  runnerServer.listen(3142, "127.0.0.1", () => {
-    console.log("[serve-dist-https] Python runner: https://localhost:3142/enterprise-runner.html");
+  runnerServer.listen(3142, "127.0.0.2", () => {
+    console.log("[serve-dist-https] Python runner: https://127.0.0.2:3142/enterprise-runner.html");
   });
 }
