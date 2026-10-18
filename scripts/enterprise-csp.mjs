@@ -4,7 +4,7 @@
  * meta tag. The endpoint value is the non-secret API base URL.
  */
 export const ENTERPRISE_LOCAL_TASKPANE_ORIGIN = "https://127.0.0.1:3141";
-export const ENTERPRISE_LOCAL_RUNNER_ORIGIN = "https://localhost:3141";
+export const ENTERPRISE_LOCAL_RUNNER_ORIGIN = "https://localhost:3142";
 
 export function buildEnterpriseContentSecurityPolicy(apiBaseUrl, runnerOrigin = null) {
   if (!apiBaseUrl || typeof apiBaseUrl !== "string") {
