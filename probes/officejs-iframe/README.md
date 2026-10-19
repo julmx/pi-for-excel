@@ -7,26 +7,26 @@
 ## Exécution sous Windows
 
 1. Ouvrir un **nouveau classeur jetable**, sans contenu réel.
-2. Récupérer la branche \`experiment/isolated-officejs-iframe-20261019\` du fork.
-3. Depuis la racine du dépôt, vérifier que \`cert.pem\` et \`key.pem\` couvrent **localhost et 127.0.0.1** (comme dans le guide Enterprise Windows). Ne pas commiter ces fichiers.
+2. Récupérer la branche `experiment/isolated-officejs-iframe-20261019` du fork.
+3. Depuis la racine du dépôt, vérifier que `cert.pem` et `key.pem` couvrent **localhost et 127.0.0.1** (comme dans le guide Enterprise Windows). Ne pas commiter ces fichiers.
 4. Lancer :
 
-   \`\`\`powershell
+   ```powershell
    node scripts/probe-officejs-iframe.mjs
-   \`\`\`
+   ```
 
-5. Charger dans Excel le manifeste affiché par le script (normalement \`%TEMP%\pi-officejs-iframe-probe.xml\`) selon la méthode d'installation des compléments autorisée par l'organisation. Le complément apparaît séparément comme **Pi Office.js Probe**. Il possède un identifiant distinct.
+5. Charger dans Excel le manifeste affiché par le script (normalement `%TEMP%\pi-officejs-iframe-probe.xml`) selon la méthode d'installation des compléments autorisée par l'organisation. Le complément apparaît séparément comme **Pi Office.js Probe**. Il possède un identifiant distinct.
 6. Ouvrir **Pi Office.js Probe**, cliquer sur **1. Créer la feuille synthétique**, puis **2. Tester Office.js dans l'iframe**.
-7. Observer le résultat dans le volet et vérifier visuellement, dans la feuille \`__PiIframeProbe\`, l'AutoFilter sur \`A1:C4\` et l'échelle de trois couleurs sur \`C2:C4\`.
+7. Observer le résultat dans le volet et vérifier visuellement, dans la feuille `__PiIframeProbe`, l'AutoFilter sur `A1:C4` et l'échelle de trois couleurs sur `C2:C4`.
 
-Le test ne réutilise ni la clé du fournisseur LLM, ni l'agent, ni \`execute_office_js\`. Il ne charge aucune donnée du classeur hors de la feuille synthétique. Le script envoyé à l'iframe est **fixe**, bien que son mode d'exécution reproduise un import dynamique de module JavaScript.
+Le test ne réutilise ni la clé du fournisseur LLM, ni l'agent, ni `execute_office_js`. Il ne charge aucune donnée du classeur hors de la feuille synthétique. Le script envoyé à l'iframe est **fixe**, bien que son mode d'exécution reproduise un import dynamique de module JavaScript.
 
 ## Architecture et limites
 
-- Hôte : \`https://127.0.0.1:3151\`, charge Office.js, crée uniquement une feuille absente et conserve un marqueur IndexedDB synthétique.
-- Exécuteur : \`https://localhost:3152\`, iframe \`sandbox="allow-scripts allow-same-origin"\`. Son domaine est déclaré dans \`AppDomains\` du manifeste de **test**, condition requise par Microsoft pour les appels Office.js depuis une iframe distincte.
-- L'hôte envoie un code fixe par \`postMessage\` avec vérification de l'origine et de la source. L'exécuteur fait un \`import(blob:)\` et un \`Excel.run()\` dans **son propre** contexte.
-- Seule l'origine exécuteur accepte \`blob:\` dans \`script-src\`. La politique principale et celle de Python Enterprise ne sont pas changées.
+- Hôte : `https://127.0.0.1:3151`, charge Office.js, crée uniquement une feuille absente et conserve un marqueur IndexedDB synthétique.
+- Exécuteur : `https://localhost:3152`, iframe `sandbox="allow-scripts allow-same-origin"`. Son domaine est déclaré dans `AppDomains` du manifeste de **test**, condition requise par Microsoft pour les appels Office.js depuis une iframe distincte.
+- L'hôte envoie un code fixe par `postMessage` avec vérification de l'origine et de la source. L'exécuteur fait un `import(blob:)` et un `Excel.run()` dans **son propre** contexte.
+- Seule l'origine exécuteur accepte `blob:` dans `script-src`. La politique principale et celle de Python Enterprise ne sont pas changées.
 - Le test vérifie l'accès au DOM parent (qui doit être refusé), la visibilité du marqueur IndexedDB parent (qui doit être fausse) et l'application effective des modifications depuis une seconde lecture côté hôte.
 - Les serveurs se limitent aux fichiers de cette expérience et aux adresses loopback. Ils n'exposent aucun relais API ni accès réseau arbitraire. Les deux pages chargent le script Office.js hébergé par Microsoft.
 
@@ -36,18 +36,18 @@ Le test ne réutilise ni la clé du fournisseur LLM, ni l'agent, ni \`execute_of
 
 | Vérification | Attendu |
 | --- | --- |
-| Office.js dans l'iframe déclarée | \`officeReady=true\` et aucune erreur d'autorisation Office |
+| Office.js dans l'iframe déclarée | `officeReady=true` et aucune erreur d'autorisation Office |
 | Opérations Excel natives | Filtre actif et une règle conditionnelle ; vérifiés par l'hôte |
-| Séparation entre origines | \`parentAccessBlocked=true\` et \`canaryVisible=false\` |
+| Séparation entre origines | `parentAccessBlocked=true` et `canaryVisible=false` |
 | Réseau / CSP | Examiner les requêtes et violations CSP dans les DevTools WebView2 ; seules les requêtes nécessaires au test doivent apparaître |
 | Privilèges Excel | Les restrictions de plage ne sont **pas** garanties ; exiger un design distinct si elles sont requises |
 
-**Ne pas fusionner cette branche seulement parce que les tests fonctionnels passent.** Vérifier en outre le comportement réseau sous WebView2, le chargement d'Office.js dans la sous-frame et les limites de permissions Office. Tester l'ajout/absence d'\`AppDomains\` sur un manifeste de test séparé si le comportement reste ambigu.
+**Ne pas fusionner cette branche seulement parce que les tests fonctionnels passent.** Vérifier en outre le comportement réseau sous WebView2, le chargement d'Office.js dans la sous-frame et les limites de permissions Office. Tester l'ajout/absence d'`AppDomains` sur un manifeste de test séparé si le comportement reste ambigu.
 
 Ce prototype ne résout pas non plus la validation des paramètres de la passerelle Python Enterprise, ni la restauration transactionnelle des scripts arbitraires.
 
 ## Nettoyage
 
-Supprimer le complément **Pi Office.js Probe** d'Excel et fermer les deux serveurs avec Ctrl+C. Supprimer le classeur jetable. Le marqueur IndexedDB synthétique est supprimé en fin de test ou à la fermeture du volet, sous réserve que le navigateur effectue l'opération ; en cas d'interruption forcée, effacer le stockage de l'origine de test \`https://127.0.0.1:3151\`.
+Supprimer le complément **Pi Office.js Probe** d'Excel et fermer les deux serveurs avec Ctrl+C. Supprimer le classeur jetable. Le marqueur IndexedDB synthétique est supprimé en fin de test ou à la fermeture du volet, sous réserve que le navigateur effectue l'opération ; en cas d'interruption forcée, effacer le stockage de l'origine de test `https://127.0.0.1:3151`.
 
 Références : documentation Microsoft **Office Add-ins manifest / AppDomains**, **manifest element ordering**, **Excel.AutoFilter** et **Excel.ColorScaleConditionalFormat**.
