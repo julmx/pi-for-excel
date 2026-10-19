@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Office.js iframe — test synthétique</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script type="module" src="/host.js"></script>
+</head>
+<body style="font:14px sans-serif;padding:12px">
+  <h2>Office.js depuis une iframe isolée — prototype</h2>
+  <p>Ne lancer ce test que sur un nouveau classeur jetable sans données confidentielles.</p>
+  <p>Une feuille <code>__PiIframeProbe</code> contenant 3 lignes synthétiques sera créée. Rien n'est envoyé à un modèle.</p>
+  <button id="prepare" disabled>1. Créer la feuille synthétique</button>
+  <button id="execute" disabled>2. Tester Office.js dans l'iframe</button>
+  <pre id="status" style="white-space:pre-wrap"></pre>
+  <iframe id="runner" src="https://localhost:3152/runner.html" title="Office.js isolated runner"
+    sandbox="allow-scripts allow-same-origin" style="width:1px;height:1px;border:0"></iframe>
+</body>
+</html>
