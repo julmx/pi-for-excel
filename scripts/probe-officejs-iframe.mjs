@@ -24,9 +24,9 @@ const manifest = original
   .replaceAll("https://localhost:3141", parentOrigin)
   .replaceAll("Pi for Excel", "Pi Office.js Probe")
   .replaceAll("/src/taskpane.html", "/host.html")
-  .replace("</DefaultSettings>",
-    "</DefaultSettings>\n  <AppDomains>\n    <AppDomain>" + childOrigin
-    + "</AppDomain>\n  </AppDomains>");
+  .replace("  <Hosts>",
+    "  <AppDomains>\n    <AppDomain>" + childOrigin
+    + "</AppDomain>\n  </AppDomains>\n  <Hosts>");
 if (!manifest.includes("<AppDomain>" + childOrigin + "</AppDomain>")
     || !manifest.includes(parentOrigin + "/host.html")) {
   throw new Error("Probe manifest generation failed");
