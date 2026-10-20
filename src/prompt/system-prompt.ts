@@ -348,9 +348,8 @@ export function buildSystemPrompt(opts: SystemPromptOptions = {}): string {
 }
 
 function buildEnterpriseSystemPrompt(opts: SystemPromptOptions): string {
-  // The system prompt must match the restricted registry. In particular,
-  // the regular prompt advertises Python, arbitrary JS, extensions, and a
-  // persistent file workspace; none is usable in an enterprise build.
+  // Enterprise documents the reviewed tools and the explicitly approved
+  // original Office.js escape hatch; Python and external bridges stay restricted.
   const rulesForUser = renderInstructionValue(opts.userInstructions, "(No rules set.)");
   const rulesForWorkbook = renderInstructionValue(opts.workbookInstructions, "(No rules set.)");
   const toolLines = filterEnterpriseBuiltInTools(CORE_TOOL_CAPABILITIES)
@@ -392,21 +391,24 @@ Use \`result = ...\` to return a JSON-compatible value. Existing write tools
 enforce overwrite rules. Prefer python_excel for complex multi-step changes,
 wide-sheet cleanup, and pandas analysis. Each run uses a fresh worker.
 
-Native Python, unrestricted JavaScript, terminal, external web access,
-dynamic pip installs, and MCP are NOT available.`,
+Native Python, terminal, external web access, dynamic pip installs, and MCP
+are NOT available. Python's excel.call() can ONLY use the structured tools,
+not execute_office_js.`,
     `## Available tools (enterprise build)
 
 Only the following Excel tools are available:
 ${toolLines}
+- **execute_office_js** — original Office.js fallback for Excel operations unavailable in structured tools. Requires explicit user approval for EACH call, including in Auto mode. Code runs in the privileged taskpane origin; only use the provided Excel RequestContext and do not access browser storage, credentials, external services, or files. This is a behavioral instruction, not a security sandbox.
 
-**Unavailable:** native Python bridge, direct Office.js/JavaScript execution, terminal/tmux, MCP, web search, extensions, skills and the file workspace. Do not use them. Use python_excel for Python transformations and approved Excel operations.
+**Unavailable:** native Python bridge, terminal/tmux, MCP, web search, extensions, skills and the file workspace. Do not use them. Use python_excel for Python transformations and approved Excel operations. Prefer the built-in Excel tools; use execute_office_js only when a native Excel operation such as AutoFilter, sort, or advanced conditional formatting is missing.
 
 For wide-sheet transformations and merged group headings, use python_excel:
 read the relevant cells with await excel.read(), carry forward the last
 nonempty group heading in Python, and write the result with await excel.write().
 This avoids manually constructing hundreds of formulas. If an operation
-cannot be completed with the allowed tools, explain the specific limitation
-rather than claiming that native Python or arbitrary JS is available.
+cannot be completed with the allowed tools, try the existing Office.js fallback
+with explicit approval, or explain the specific limitation. Do not claim
+access to native Python, other files, or unrestricted external tools.
 Use python_excel instead of unavailable execution tools.
 After creating or updating a chart with **charts**, use its get_image
 action if visual verification would help.`,
