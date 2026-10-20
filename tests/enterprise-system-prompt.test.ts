@@ -18,6 +18,9 @@ void test("enterprise agent prompt matches the approved Excel tool registry", ()
   }
 
   assert.match(prompt, /only the following Excel tools are available/i);
+  assert.match(prompt, /\*\*execute_office_js\*\*/u);
+  assert.match(prompt, /explicit user approval for EACH call/iu);
+  assert.doesNotMatch(prompt, /Unavailable:[^\n]*direct Office\.js/iu);
   assert.match(prompt, /python_excel.*Pyodide|Pyodide[\s\S]*python_excel/iu);
   assert.match(prompt, /await excel.read/iu);
   assert.match(prompt, /read_range.*csv/i);
