@@ -24,7 +24,7 @@ Le test ne réutilise ni la clé du fournisseur LLM, ni l'agent, ni `execute_off
 ## Architecture et limites
 
 - Hôte : `https://127.0.0.1:3151`, charge Office.js, crée uniquement une feuille absente et conserve un marqueur IndexedDB synthétique.
-- Exécuteur : `https://localhost:3152`, iframe `sandbox="allow-scripts allow-same-origin"`. Son domaine est déclaré dans `AppDomains` du manifeste de **test**, condition requise par Microsoft pour les appels Office.js depuis une iframe distincte.
+- Exécuteur : `https://localhost:3152`, iframe **sans attribut `sandbox` pour ce test différentiel**. L’isolation DOM/IndexedDB reste fondée sur des origines HTTPS différentes. Son domaine est déclaré dans `AppDomains` du manifeste de **test**, condition requise par Microsoft pour les appels Office.js depuis une iframe distincte.
 - L'hôte envoie un code fixe par `postMessage` avec vérification de l'origine et de la source. L'exécuteur fait un `import(blob:)` et un `Excel.run()` dans **son propre** contexte.
 - Seule l'origine exécuteur accepte `blob:` dans `script-src`. La politique principale et celle de Python Enterprise ne sont pas changées.
 - Le test vérifie l'accès au DOM parent (qui doit être refusé), la visibilité du marqueur IndexedDB parent (qui doit être fausse) et l'application effective des modifications depuis une seconde lecture côté hôte.
@@ -51,3 +51,7 @@ Ce prototype ne résout pas non plus la validation des paramètres de la passere
 Supprimer le complément **Pi Office.js Probe** d'Excel et fermer les deux serveurs avec Ctrl+C. Supprimer le classeur jetable. Le marqueur IndexedDB synthétique est supprimé en fin de test ou à la fermeture du volet, sous réserve que le navigateur effectue l'opération ; en cas d'interruption forcée, effacer le stockage de l'origine de test `https://127.0.0.1:3151`.
 
 Références : documentation Microsoft **Office Add-ins manifest / AppDomains**, **manifest element ordering**, **Excel.AutoFilter** et **Excel.ColorScaleConditionalFormat**.
+
+## Diagnostic du 20 octobre 2026
+
+Premier essai réel sous Excel Windows : l'hôte a annoncé `Office.onReady { host: Excel }`, mais l'iframe a annoncé `officeReady=false`. Le code Office.js fixe n'a donc pas encore été validé. Cette révision retire **uniquement l'attribut `sandbox` de l'iframe**, afin de tester si cette restriction affecte l'initialisation Office.js ; les origines parent et enfant restent différentes. Le résultat est désormais diagnostiqué avec un timeout de 10 s. **L'absence d'attribut sandbox ne constitue pas un renforcement de sécurité** ; si le test fonctionne, une analyse de menace supplémentaire sera indispensable avant toute intégration. Cette variation ne doit pas être transférée automatiquement à l'Enterprise.
