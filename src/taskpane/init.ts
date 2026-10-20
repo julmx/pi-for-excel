@@ -788,11 +788,13 @@ export async function initTaskpane(opts: {
     title: string;
     message: string;
     confirmLabel?: string;
+    codePreview?: string;
   }): Promise<boolean> => {
     return requestConfirmationDialog({
       overlayId: TOOL_APPROVAL_OVERLAY_ID,
       title: args.title,
       message: normalizeApprovalMessage(args.title, args.message),
+      ...(args.codePreview !== undefined ? { codePreview: args.codePreview } : {}),
       ...(args.confirmLabel !== undefined ? { confirmLabel: args.confirmLabel } : {}),
       cancelLabel: t("confirm.cancel"),
       restoreFocusOnClose: true,
@@ -836,8 +838,9 @@ export async function initTaskpane(opts: {
               ? t("init.confirm.wpsJsTitle")
               : t("init.confirm.officeJsTitle"),
             message: enterprisePolicy
-              ? `${buildOfficeJsExecuteApprovalMessage(request)}\n\nEnterprise warning: This JavaScript runs in the add-in page, not in an Excel-only sandbox. It may read saved Pi sessions, other workbook history, and stored API credentials. The preview shows only the first code line; review the full tool call before approving.`
+              ? `${buildOfficeJsExecuteApprovalMessage(request)}\n\nEnterprise warning: This JavaScript runs in the add-in page, not in an Excel-only sandbox. It may read saved Pi sessions, other workbook history, and stored API credentials. The preview shows only the first code line; expand the complete script below and review it before approving.`
               : buildOfficeJsExecuteApprovalMessage(request),
+            ...(enterprisePolicy ? { codePreview: request.code } : {}),
             confirmLabel: t("init.confirm.allowOnce"),
           });
         },
