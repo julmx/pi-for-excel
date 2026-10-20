@@ -69,6 +69,7 @@
   "compat.thought": "思考",
   "confirm.cancel": "取消",
   "confirm.confirm": "确认",
+  "confirm.reviewFullCode": "批准前查看完整的 JavaScript 代码",
   "confirm.unavailable": "确认对话框在当前环境中不可用。",
   "custom-gateway-settings.configured-gateways": "已配置的网关",
   "custom-gateway-settings.update-gateway": "更新网关",
