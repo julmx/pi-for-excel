@@ -12,7 +12,7 @@ The user approval dialog is a risk-reduction measure, not a code sandbox. The up
 
 - Reuse the existing `execute_office_js` implementation and approval dialog (no new general-purpose Excel command engine).
 - Register it in the Enterprise *agent* tool list only; `python_excel` and its first-party structured RPC whitelist remain unchanged. `await excel.call("execute_office_js", ...)` must fail.
-- Require **explicit confirmation before every `execute_office_js` call**, including Auto mode. The existing confirmation must fail closed if no UI is available. Structured tools remain governed by Auto/Confirm as before.
+- Require **explicit confirmation before every `execute_office_js` call**, including Auto mode. The confirmation shows an explicit warning about the same-origin sessions/API-key risk and offers an expandable view of the **complete generated script**, not just the first line. The existing confirmation must fail closed if no UI is available. Structured tools remain governed by Auto/Confirm as before.
 - Allow `blob:` for **taskpane script-src** so the existing dynamic module import can run. Keep the current `connect-src` restriction to the approved model gateway and Microsoft Office host, and **do not** enable `unsafe-eval`, open proxy access, native Python bridges, MCP, or unrestricted file access.
 - Instruct the agent to prefer structured Excel tools and use Office.js only when needed for native Excel features such as filters, sorting, advanced conditional formatting.
 
@@ -42,3 +42,11 @@ Use a disposable workbook and the existing local Enterprise Windows build instru
 A passing test only means that the **upstream functional fallback** was restored without obvious regressions to Python or outbound CSP restrictions. It is **not** a certification, proof of no out-of-workbook access, or approval to process confidential data.
 
 No changes are made to upstream core Excel tool implementations.
+
+## 20 October 2026 final-review notes
+
+- Windows user reported all four synthetic functional/approval tests passed before the final approval UI revision.
+- Code review confirms that IndexedDB remains readable to arbitrary JavaScript in the taskpane origin. The proposal explicitly **accepts this residual limitation for the prototype** rather than claiming the browser can be restricted to the active Excel workbook. It cannot guarantee protection of previously stored session content, even though Office.js does not grant arbitrary Windows file access.
+- The lockfile now upgrades the transitive optional peer dependency `hono` from `4.13.7` to `4.13.11` for GHSA-5r4p-p66f-jhc7, without introducing a new direct dependency. Verify with npm CI/audit.
+- The approval dialog can now expand to show the whole generated source. The visible source is **not** a parser-enforced Excel-only security policy; user review of arbitrary JavaScript can miss hidden behavior.
+- No further native Excel feature duplication is justified by this review.
