@@ -73,3 +73,40 @@ void test("execute_office_js allows Excel code and risk-name look-alikes in Auto
     assert.match(block.text, new RegExp(`Executed Office\\.js: ${example.name}`, "u"));
   }
 });
+
+void test("enterprise Office.js always requires per-call approval, including Auto mode", async () => {
+  let approvals = 0;
+  let executions = 0;
+  const [tool] = await applyExperimentalToolGates([
+    createExecuteOfficeJsTool({
+      runCode: () => {
+        executions += 1;
+        return Promise.resolve({ ok: true });
+      },
+    }),
+  ], {
+    alwaysConfirmOfficeJs: true,
+    getExecutionMode: () => Promise.resolve("yolo" as const),
+    requestOfficeJsExecuteApproval: (request) => {
+      approvals += 1;
+      assert.equal(request.code, "return 123;");
+      return Promise.resolve(approvals === 2);
+    },
+  });
+  if (!tool) throw new Error("Expected execute_office_js tool.");
+
+  await assert.rejects(
+    () => tool.execute("enterprise-denied", {
+      explanation: "Synthetic probe", code: "return 123;",
+    }),
+    /cancelled by user/iu,
+  );
+  assert.equal(executions, 0, "denied execution must never run");
+
+  const success = await tool.execute("enterprise-approved", {
+    explanation: "Synthetic probe", code: "return 123;",
+  });
+  assert.match(success.content[0]?.type === "text" ? success.content[0].text : "", /Executed Office\\.js/u);
+  assert.equal(approvals, 2, "every execution must request approval");
+  assert.equal(executions, 1);
+});
