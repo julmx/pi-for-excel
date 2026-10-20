@@ -69,6 +69,7 @@
   "compat.thought": "Thought",
   "confirm.cancel": "Cancel",
   "confirm.confirm": "Confirm",
+  "confirm.reviewFullCode": "Review complete JavaScript before approval",
   "confirm.unavailable": "Confirm dialog is not available in the current environment.",
   "custom-gateway-settings.configured-gateways": "Configured gateways",
   "custom-gateway-settings.update-gateway": "Update gateway",
