@@ -835,7 +835,9 @@ export async function initTaskpane(opts: {
             title: apiName === "WPS JSAPI"
               ? t("init.confirm.wpsJsTitle")
               : t("init.confirm.officeJsTitle"),
-            message: buildOfficeJsExecuteApprovalMessage(request),
+            message: enterprisePolicy
+              ? `${buildOfficeJsExecuteApprovalMessage(request)}\n\nEnterprise warning: This JavaScript runs in the add-in page, not in an Excel-only sandbox. It may read saved Pi sessions, other workbook history, and stored API credentials. The preview shows only the first code line; review the full tool call before approving.`
+              : buildOfficeJsExecuteApprovalMessage(request),
             confirmLabel: t("init.confirm.allowOnce"),
           });
         },
