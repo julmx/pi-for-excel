@@ -92,7 +92,7 @@ export function requestConfirmationDialog(options: ConfirmDialogOptions): Promis
     const codeDisclosure = document.createElement("details");
     if (options.codePreview !== undefined) {
       const summary = document.createElement("summary");
-      summary.textContent = "Review complete JavaScript before approval";
+      summary.textContent = t("confirm.reviewFullCode");
       const code = document.createElement("pre");
       code.textContent = options.codePreview;
       code.style.maxHeight = "16rem";
