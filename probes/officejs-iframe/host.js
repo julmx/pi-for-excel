@@ -104,6 +104,12 @@ execute.addEventListener("click", () => {
   pending = id;
   report("Envoi d'un script Office.js FIXE à l'iframe isolée...");
   frame.contentWindow.postMessage({type: "probe-run", id, code}, RUNNER);
+  setTimeout(() => {
+    if (pending !== id) return;
+    pending = null;
+    report("ÉCHEC : aucune réponse de l'iframe après 10 secondes. Vérifier sa console WebView2 et les erreurs CSP.");
+    clearCanary();
+  }, 10000);
 });
 
 window.addEventListener("message", async (event) => {
@@ -112,8 +118,14 @@ window.addEventListener("message", async (event) => {
   if (!message || typeof message !== "object") return;
   if (message.type === "probe-ready") {
     childReady = true;
-    report("Iframe initialisée sur " + message.origin + " ; Office ready=" + message.officeReady);
+    report("Iframe initialisée sur " + message.origin + " ; Office ready=" + message.officeReady
+      + " ; host=" + String(message.host ?? "(absent)")
+      + " ; Excel disponible=" + String(message.excelAvailable ?? "(inconnu)"));
     execute.disabled = !prepared;
+    return;
+  }
+  if (message.type === "probe-started") {
+    report("Iframe : commande reçue, exécution en cours.");
     return;
   }
   if (message.type !== "probe-result" || message.id !== pending) return;
@@ -135,6 +147,7 @@ window.addEventListener("message", async (event) => {
       report("Échec vérification hôte: " + String(error));
     }
   }
+  if (!message.ok) report("TEST OFFICE.JS : ÉCHEC (" + message.error + ")");
   clearCanary();
 });
 window.addEventListener("pagehide", clearCanary);
