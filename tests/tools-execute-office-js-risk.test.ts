@@ -106,7 +106,7 @@ void test("enterprise Office.js always requires per-call approval, including Aut
   const success = await tool.execute("enterprise-approved", {
     explanation: "Synthetic probe", code: "return 123;",
   });
-  assert.match(success.content[0]?.type === "text" ? success.content[0].text : "", /Executed Office\\.js/u);
+  assert.match(success.content[0]?.type === "text" ? success.content[0].text : "", /Executed Office\.js/u);
   assert.equal(approvals, 2, "every execution must request approval");
   assert.equal(executions, 1);
 });
