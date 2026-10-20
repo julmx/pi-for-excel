@@ -30,23 +30,26 @@ behavior.
 
 ## What the prototype currently restricts
 
-- **Agent tools:** Only reviewed, first-party Excel operations and the
-  enterprise-only `python_excel` tool are exposed to the agent. The Python
-  Worker reuses these Excel tools through allowlisted RPC; terminal, native
-  Python bridges, arbitrary Office.js, MCP, web search, external integrations,
-  skills and extension tools remain excluded from the restricted agent surface.
-  Python itself is **not a security sandbox**: same-origin Worker JavaScript
-  and IndexedDB access need isolation before confidential workbook use.
-  See [the focused 2026-10-18 security review](./enterprise-security-review-2026-10-18.md).
+- **Agent tools:** The reviewed first-party Excel operations and
+  `python_excel` remain available. The original `execute_office_js` is
+  re-enabled **only for the agent**, with explicit per-execution confirmation
+  even in Auto mode. Python RPC still rejects `execute_office_js` and
+  all non-allowlisted tools. Terminal, native Python bridges, MCP, web search,
+  external integrations, skills and extension tools remain unavailable.
+  Direct Office.js scripts execute in the privileged taskpane page and may
+  read its same-origin IndexedDB (including stored keys and sessions).
+  This is NOT a secure sandbox or permission restriction to the active workbook.
+  See [the Office.js fallback review](./enterprise-officejs-fallback.md) and
+  [the earlier Python security review](./enterprise-security-review-2026-10-18.md).
 - **Extensions and local bridges:** Enterprise startup disables persisted
   extension loading and installation/activation through the extension manager.
   The extension, add-on, tools, skills, files, experimental and debug slash
   commands are excluded. Local bridge discovery and the development background
   verification bridge are not started in enterprise mode.
-- **Workbook confirmation remains configurable:** The existing Auto and
-  Confirm execution modes are both supported. The chosen mode is persisted;
-  neither per-edit approval nor automatic edits are forcibly selected by
-  the enterprise build.
+- **Workbook confirmation:** The existing Auto and Confirm modes remain
+  selectable for structured edits. `execute_office_js` always requires an
+  additional dedicated confirmation before each call in Enterprise, even
+  when Auto is selected; the standard build's behavior is unchanged.
 - **Agent model transport:** The main agent stream accepts only custom
   `openai-completions` gateways with the **exact approved base URL**.
   The request cannot silently fall back to a public model or user-configured

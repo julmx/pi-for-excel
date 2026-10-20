@@ -23,7 +23,9 @@ export function buildEnterpriseContentSecurityPolicy(apiBaseUrl, runnerOrigin = 
 
   return [
     "default-src 'none'",
-    "script-src 'self' 'wasm-unsafe-eval' https://appsforoffice.microsoft.com",
+    // The original execute_office_js imports a dynamically generated blob module.
+    // This relaxes script creation, NOT network destinations or unsafe-eval.
+    "script-src 'self' blob: 'wasm-unsafe-eval' https://appsforoffice.microsoft.com",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' data: blob:",

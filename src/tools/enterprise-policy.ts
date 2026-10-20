@@ -22,9 +22,15 @@ const ENTERPRISE_EXCEL_TOOL_NAMES = new Set<string>([
   "python_excel",
 ]);
 
-/** Preserve tool instances and ordering while omitting unapproved built-ins. */
+/** Preserve tool instances and ordering for the *Python RPC* whitelist. */
 export function filterEnterpriseBuiltInTools<T extends { name: string }>(
   tools: readonly T[],
 ): T[] {
   return tools.filter((tool) => ENTERPRISE_EXCEL_TOOL_NAMES.has(tool.name));
+}
+
+/** Only the agent can use the Office.js fallback, never isolated Python. */
+export function filterEnterpriseAgentTools<T extends { name: string }>(tools: readonly T[]): T[] {
+  return tools.filter((tool) => ENTERPRISE_EXCEL_TOOL_NAMES.has(tool.name)
+    || tool.name === "execute_office_js");
 }

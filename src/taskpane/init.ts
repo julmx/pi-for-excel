@@ -39,7 +39,7 @@ import { runCompactCommand } from "../commands/builtins/export.js";
 import { getFilesWorkspace } from "../files/workspace.js";
 import { ConnectionManager } from "../connections/manager.js";
 import { createAllTools } from "../tools/index.js";
-import { filterEnterpriseBuiltInTools } from "../tools/enterprise-policy.js";
+import { filterEnterpriseAgentTools } from "../tools/enterprise-policy.js";
 import { collectRequiredConnectionIds } from "../tools/connection-requirements.js";
 import {
   applyToolOutputTruncation,
@@ -788,11 +788,13 @@ export async function initTaskpane(opts: {
     title: string;
     message: string;
     confirmLabel?: string;
+    codePreview?: string;
   }): Promise<boolean> => {
     return requestConfirmationDialog({
       overlayId: TOOL_APPROVAL_OVERLAY_ID,
       title: args.title,
       message: normalizeApprovalMessage(args.title, args.message),
+      ...(args.codePreview !== undefined ? { codePreview: args.codePreview } : {}),
       ...(args.confirmLabel !== undefined ? { confirmLabel: args.confirmLabel } : {}),
       cancelLabel: t("confirm.cancel"),
       restoreFocusOnClose: true,
@@ -828,13 +830,17 @@ export async function initTaskpane(opts: {
 
       const gatedCoreTools = await applyExperimentalToolGates(coreTools, {
         getExecutionMode: () => Promise.resolve(getExecutionMode()),
+        alwaysConfirmOfficeJs: enterprisePolicy !== null,
         requestOfficeJsExecuteApproval: (request) => {
           const apiName = request.apiName ?? "Office.js";
           return requestRuntimeToolApproval({
             title: apiName === "WPS JSAPI"
               ? t("init.confirm.wpsJsTitle")
               : t("init.confirm.officeJsTitle"),
-            message: buildOfficeJsExecuteApprovalMessage(request),
+            message: enterprisePolicy
+              ? `${buildOfficeJsExecuteApprovalMessage(request)}\n\nEnterprise warning: This JavaScript runs in the add-in page, not in an Excel-only sandbox. It may read saved Pi sessions, other workbook history, and stored API credentials. The preview shows only the first code line; expand the complete script below and review it before approving.`
+              : buildOfficeJsExecuteApprovalMessage(request),
+            ...(enterprisePolicy ? { codePreview: request.code } : {}),
             confirmLabel: t("init.confirm.allowOnce"),
           });
         },
@@ -856,11 +862,11 @@ export async function initTaskpane(opts: {
       const extensionTools = extensionManager.getRegisteredTools();
       const extensionToolRevision = extensionManager.getToolRevision();
 
-      // Enterprise builds must not advertise external or arbitrary-code tools.
-      // This only restricts the agent tool surface; see docs/enterprise-hardening.md.
+      // Enterprise exposes only reviewed tools plus the original Office.js fallback.
+      // The isolated Python RPC deliberately retains its narrower whitelist.
       const enterpriseMode = import.meta.env.VITE_PI_ENTERPRISE_MODE === "true";
       const runtimeTools = normalizeRuntimeTools(enterpriseMode
-        ? filterEnterpriseBuiltInTools(gatedCoreTools)
+        ? filterEnterpriseAgentTools(gatedCoreTools)
         : [
             ...gatedCoreTools,
             ...createToolsForIntegrations(activeIntegrationIds),
@@ -885,6 +891,11 @@ export async function initTaskpane(opts: {
         {
           getExecutionMode: () => Promise.resolve(getExecutionMode()),
           requestMutationApproval: (request) => {
+            // The dedicated Office.js gate always asks for approval in Enterprise,
+            // including Auto mode. Avoid prompting twice when Confirm is selected.
+            if (enterprisePolicy && request.toolName === "execute_office_js") {
+              return Promise.resolve(true);
+            }
             return requestRuntimeToolApproval({
               title: t("init.confirm.safeModeMutationTitle"),
               message: buildMutationApprovalMessage(request),

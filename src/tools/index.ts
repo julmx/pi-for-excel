@@ -39,12 +39,12 @@ export function createAllTools(options: CreateAllToolsOptions = {}): AnyCoreTool
     ...(options.skillReadCache !== undefined ? { readCache: options.skillReadCache } : {}),
   };
 
-  // Restrict the tool registry itself, not just the tools advertised to the
-  // agent. This avoids constructing the arbitrary-code and bridge tools.
+  // Enterprise retains the reviewed core tools and isolated Python. Restore the
+  // original Office.js fallback for the agent only; Python RPC stays allowlisted.
   if (import.meta.env?.VITE_PI_ENTERPRISE_MODE === "true") {
     return [
       ...filterEnterpriseBuiltInTools(createCoreTools({ hostKind, skills })),
-      ...(hostKind === "office" ? [createEnterprisePythonExcelTool(hostKind)] : []),
+      ...(hostKind === "office" ? [createEnterprisePythonExcelTool(hostKind), createExecuteOfficeJsTool()] : []),
     ];
   }
 
