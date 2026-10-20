@@ -16,6 +16,8 @@ export type ConfirmButtonTone = "primary" | "danger";
 export interface ConfirmDialogOptions {
   title: string;
   message: string;
+  /** Optional full source code shown in an expandable section before approval. */
+  codePreview?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   confirmButtonTone?: ConfirmButtonTone;
@@ -85,6 +87,21 @@ export function requestConfirmationDialog(options: ConfirmDialogOptions): Promis
     message.className = "pi-overlay-subtitle pi-confirm-dialog__message";
     message.textContent = options.message;
 
+    // Let the user inspect the full Office.js script without expanding the
+    // default confirmation dialog for every ordinary action.
+    const codeDisclosure = document.createElement("details");
+    if (options.codePreview !== undefined) {
+      const summary = document.createElement("summary");
+      summary.textContent = "Review complete JavaScript before approval";
+      const code = document.createElement("pre");
+      code.textContent = options.codePreview;
+      code.style.maxHeight = "16rem";
+      code.style.overflow = "auto";
+      code.style.whiteSpace = "pre-wrap";
+      code.style.overflowWrap = "anywhere";
+      codeDisclosure.append(summary, code);
+    }
+
     const actions = document.createElement("div");
     actions.className = "pi-overlay-actions";
 
@@ -108,6 +125,7 @@ export function requestConfirmationDialog(options: ConfirmDialogOptions): Promis
 
     actions.append(cancelButton, confirmButton);
     body.appendChild(message);
+    if (options.codePreview !== undefined) body.appendChild(codeDisclosure);
     dialog.card.append(header, body, actions);
     dialog.mount();
   });
