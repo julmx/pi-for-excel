@@ -36,7 +36,9 @@ async function canReadParentCanary() {
 
 Office.onReady((info) => {
   officeReady = info.host === Office.HostType.Excel;
-  respond({type: "probe-ready", origin: window.location.origin, officeReady});
+  respond({type: "probe-ready", origin: window.location.origin, officeReady,
+    host: info?.host ?? null, platform: info?.platform ?? null,
+    excelAvailable: typeof Excel !== "undefined"});
 });
 
 window.addEventListener("message", async (event) => {
@@ -46,6 +48,7 @@ window.addEventListener("message", async (event) => {
       || typeof request.id !== "string" || typeof request.code !== "string"
       || request.code.length > 10000) return;
   ran = true;
+  respond({type: "probe-started", id: request.id});
 
   let parentAccessBlocked = false;
   try {
