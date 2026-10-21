@@ -10,7 +10,7 @@ export const OPENAI_GATEWAY_PROVIDER_PREFIX = "Gateway · ";
 const OPENAI_GATEWAY_TYPE = "openai-completions";
 
 export const DEFAULT_OPENAI_GATEWAY_CONTEXT_WINDOW = 16_384;
-const DEFAULT_OPENAI_GATEWAY_MAX_TOKENS = 4_096;
+export const DEFAULT_OPENAI_GATEWAY_MAX_TOKENS = 4_096;
 
 type StoredModel = NonNullable<CustomProvider["models"]>[number];
 
@@ -29,15 +29,19 @@ export interface OpenAiGatewayConfig {
   apiKey: string;
   providerName: string;
   contextWindow: number;
+  maxTokens: number;
 }
 
 export interface SaveOpenAiGatewayInput {
   id?: string;
   displayName?: string;
   endpointUrl: string;
-  modelId: string;
+  modelId?: string;
   apiKey?: string;
   contextWindow?: number;
+  maxTokens?: number;
+  /** Explicit Enterprise opt-in: registration and discovery need no seed model ID. */
+  allowDiscoveryOnly?: boolean;
 }
 
 export interface CustomProviderRuntimeInfo {
@@ -103,6 +107,14 @@ export function normalizeGatewayContextWindow(contextWindow: number | null | und
   return normalized;
 }
 
+export function normalizeGatewayMaxTokens(maxTokens: number | null | undefined, contextWindow: number): number {
+  const value = maxTokens ?? Math.min(DEFAULT_OPENAI_GATEWAY_MAX_TOKENS, contextWindow);
+  if (!Number.isInteger(value) || value < 1 || value > contextWindow) {
+    throw new Error("Max output tokens must be a whole number between 1 and Max context tokens.");
+  }
+  return value;
+}
+
 function deriveDisplayName(rawName: string | undefined, endpointUrl: string): string {
   const explicit = normalizeOptionalString(rawName);
   if (explicit.length > 0) {
@@ -145,12 +157,12 @@ export function isOpenAiGatewayProvider(provider: CustomProvider): boolean {
 
   const model = getFirstModel(provider);
   if (!model) {
-    return false;
+    // Enterprise gateways may start with an empty model list and discover it.
+    return (provider.models?.length ?? 0) === 0
+      && normalizeOptionalString(provider.gatewayProviderName).startsWith(OPENAI_GATEWAY_PROVIDER_PREFIX);
   }
-
-  const providerName = normalizeOptionalString(model.provider);
-  const modelId = normalizeOptionalString(model.id);
-  return providerName.length > 0 && modelId.length > 0;
+  return normalizeOptionalString(model.provider).length > 0
+    && normalizeOptionalString(model.id).length > 0;
 }
 
 function providerToGatewayConfig(provider: CustomProvider): OpenAiGatewayConfig | null {
@@ -159,25 +171,18 @@ function providerToGatewayConfig(provider: CustomProvider): OpenAiGatewayConfig 
   }
 
   const model = getFirstModel(provider);
-  if (!model) {
-    return null;
-  }
-
-  const providerName = normalizeOptionalString(model.provider);
-  if (providerName.length === 0) {
-    return null;
-  }
+  const providerName = normalizeOptionalString(provider.gatewayProviderName || model?.provider);
+  if (providerName.length === 0) return null;
 
   const endpointUrl = normalizeOptionalString(provider.baseUrl);
-  const modelId = normalizeOptionalString(model.id);
-  if (endpointUrl.length === 0 || modelId.length === 0) {
-    return null;
-  }
+  const modelId = normalizeOptionalString(model?.id);
+  if (endpointUrl.length === 0) return null;
 
   const defaultDisplayName = providerName.startsWith(OPENAI_GATEWAY_PROVIDER_PREFIX)
     ? providerName.slice(OPENAI_GATEWAY_PROVIDER_PREFIX.length)
     : providerName;
 
+  const contextWindow = normalizeGatewayContextWindow(provider.gatewayContextWindow ?? model?.contextWindow);
   return {
     id: provider.id,
     displayName: normalizeOptionalString(provider.name) || defaultDisplayName,
@@ -185,7 +190,8 @@ function providerToGatewayConfig(provider: CustomProvider): OpenAiGatewayConfig 
     modelId,
     apiKey: normalizeOptionalString(provider.apiKey),
     providerName,
-    contextWindow: normalizeGatewayContextWindow(model.contextWindow),
+    contextWindow,
+    maxTokens: normalizeGatewayMaxTokens(provider.gatewayMaxTokens ?? model?.maxTokens, contextWindow),
   };
 }
 
@@ -194,13 +200,11 @@ function createGatewayModel(args: {
   modelId: string;
   providerName: string;
   contextWindow: number;
+  maxTokens: number;
   registryModel?: Model<Api>;
 }): Model<"openai-completions"> {
   const registryModel = args.registryModel;
-  const maxTokens = Math.min(
-    registryModel?.maxTokens ?? DEFAULT_OPENAI_GATEWAY_MAX_TOKENS,
-    args.contextWindow,
-  );
+  const maxTokens = args.maxTokens;
 
   return {
     id: args.modelId,
@@ -273,17 +277,28 @@ export async function saveOpenAiGatewayConfig(
   models?: Pick<Models, "getModels">,
 ): Promise<OpenAiGatewayConfig> {
   const endpointUrl = normalizeGatewayEndpointUrl(input.endpointUrl);
-  const modelId = normalizeGatewayModelId(input.modelId);
-  const registryModel = models?.getModels().find((model) => (
+  const modelId = normalizeOptionalString(input.modelId);
+  if (!modelId && !input.allowDiscoveryOnly) normalizeGatewayModelId(modelId);
+  const registryModel = modelId ? models?.getModels().find((model) => (
     !model.provider.startsWith(OPENAI_GATEWAY_PROVIDER_PREFIX)
     && model.baseUrl === endpointUrl
     && model.id === modelId
     && model.api === OPENAI_GATEWAY_TYPE
-  ));
-  const contextWindow = normalizeGatewayContextWindow(
-    input.contextWindow ?? registryModel?.contextWindow,
-  );
+  )) : undefined;
   const existingGateways = await listOpenAiGatewayConfigs(customProvidersStore);
+  const editingGateway = input.id
+    ? existingGateways.find((gateway) => gateway.id === input.id)
+    : undefined;
+  const contextWindow = normalizeGatewayContextWindow(
+    input.contextWindow ?? editingGateway?.contextWindow ?? registryModel?.contextWindow,
+  );
+  const maxTokens = normalizeGatewayMaxTokens(
+    input.maxTokens ?? editingGateway?.maxTokens
+      ?? (registryModel?.maxTokens !== undefined
+        ? Math.min(registryModel.maxTokens, contextWindow)
+        : undefined),
+    contextWindow,
+  );
 
   if (input.id) {
     const match = existingGateways.find((gateway) => gateway.id === input.id);
@@ -314,15 +329,19 @@ export async function saveOpenAiGatewayConfig(
     name: displayName,
     type: OPENAI_GATEWAY_TYPE,
     baseUrl: endpointUrl,
-    models: [
-      createGatewayModel({
+    gatewayProviderName: providerName,
+    gatewayContextWindow: contextWindow,
+    gatewayMaxTokens: maxTokens,
+    models: modelId
+      ? [createGatewayModel({
         endpointUrl,
         modelId,
         providerName,
         contextWindow,
+        maxTokens,
         ...(registryModel !== undefined ? { registryModel } : {}),
-      }),
-    ],
+      })]
+      : [],
   };
   if (apiKey.length > 0) {
     provider.apiKey = apiKey;
@@ -338,6 +357,7 @@ export async function saveOpenAiGatewayConfig(
     apiKey,
     providerName,
     contextWindow,
+    maxTokens,
   };
 }
 
