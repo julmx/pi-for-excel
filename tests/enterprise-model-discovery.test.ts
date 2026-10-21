@@ -135,3 +135,75 @@ void test("enterprise mode discovers approved gateway models without an external
     resolveApiKey: () => Promise.resolve(undefined),
   }), /disabled in enterprise mode/u);
 });
+
+
+void test("enterprise discovers every gateway model without configuring a seed model ID", async () => {
+  const providers = new MemoryProviders();
+  const gateway = await saveOpenAiGatewayConfig(providers, {
+    displayName: "Discovery only",
+    endpointUrl: policy.baseUrl,
+    apiKey: "fake-test-token",
+    contextWindow: 131_072,
+    maxTokens: 16_384,
+    allowDiscoveryOnly: true,
+  });
+  assert.equal(gateway.modelId, "");
+  assert.deepEqual((await providers.get(gateway.id))?.models, []);
+
+  const urls: string[] = [];
+  const runtime = new BrowserModelRuntime({
+    enterprisePolicy: policy,
+    providerKeys: {
+      get: () => Promise.resolve(null),
+      set: () => Promise.resolve(),
+      delete: () => Promise.resolve(),
+      list: () => Promise.resolve([]),
+    },
+    modelCatalogs: new MemoryCatalogs(),
+    getProxyUrl: () => Promise.resolve("https://should-not-use.example.invalid"),
+    fetchFn: (input, init) => {
+      const url = typeof input === "string"
+        ? input : input instanceof URL ? input.toString() : input.url;
+      urls.push(url);
+      assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer fake-test-token");
+      return Promise.resolve(Response.json({
+        data: [{ id: "model-B" }, { id: "model-A" }, { id: "model-B" }],
+      }));
+    },
+  });
+  await runtime.syncCustomProviders(await providers.getAll());
+  assert.ok(runtime.models.getProvider(gateway.providerName));
+  const result = await runtime.refresh({ allowNetwork: true, force: true });
+  assert.equal(result.errors.size, 0);
+  assert.deepEqual(urls, [`${policy.baseUrl}/models`]);
+  const discovered = runtime.models.getModels(gateway.providerName);
+  assert.deepEqual(discovered.map((model) => model.id), ["model-A", "model-B"]);
+  for (const model of discovered) {
+    assert.equal(model.contextWindow, 131_072);
+    assert.equal(model.maxTokens, 16_384);
+  }
+});
+
+void test("enterprise never registers a discovery-only gateway pointing outside the approved API", async () => {
+  const providers = new MemoryProviders();
+  await saveOpenAiGatewayConfig(providers, {
+    displayName: "Unapproved discovery",
+    endpointUrl: "https://unapproved.example.invalid/v1",
+    allowDiscoveryOnly: true,
+  });
+  const runtime = new BrowserModelRuntime({
+    enterprisePolicy: policy,
+    providerKeys: {
+      get: () => Promise.resolve(null),
+      set: () => Promise.resolve(),
+      delete: () => Promise.resolve(),
+      list: () => Promise.resolve([]),
+    },
+    modelCatalogs: new MemoryCatalogs(),
+    getProxyUrl: () => Promise.resolve(undefined),
+    fetchFn: () => Promise.reject(new Error("Must not fetch unapproved endpoint")),
+  });
+  await runtime.syncCustomProviders(await providers.getAll());
+  assert.deepEqual(runtime.models.getProviders().filter((provider) =>
+    provider.id.startsWith("Gateway · ")), []);
+});

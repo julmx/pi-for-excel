@@ -25,6 +25,10 @@ export interface CustomProvider {
   baseUrl: string;
   apiKey?: string;
   models?: Model<Api>[];
+  /** Persisted defaults and stable identity for manually configured gateways. */
+  gatewayProviderName?: string;
+  gatewayContextWindow?: number;
+  gatewayMaxTokens?: number;
 }
 
 export class CustomProvidersStore extends Store {
