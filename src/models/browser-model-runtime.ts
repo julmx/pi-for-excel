@@ -69,6 +69,9 @@ export interface BrowserProviderRegistration {
   api: BrowserProviderApi;
   baseUrl: string;
   models: readonly BrowserProviderModelDefinition[];
+  /** Gateway-wide token limits also apply when no seed model is configured. */
+  gatewayContextWindow?: number;
+  gatewayMaxTokens?: number;
   /** Omit to derive the discovery URL; null keeps only the supplied models. */
   modelsUrl?: string | null;
   resolveApiKey: () => Promise<string | undefined>;
@@ -88,6 +91,8 @@ export interface CreateBrowserModelRuntimeOptions {
 interface DynamicProviderCatalogSpec {
   api: BrowserProviderApi;
   baseUrl: string;
+  gatewayContextWindow?: number;
+  gatewayMaxTokens?: number;
 }
 
 function normalizeNonEmpty(value: string, label: string): string {
@@ -234,8 +239,8 @@ function sanitizeCatalogEntry(
           reasoning: model.reasoning,
           input: model.input,
           inputLimits: model.inputLimits,
-          contextWindow: model.contextWindow,
-          maxTokens: model.maxTokens,
+          contextWindow: spec.gatewayContextWindow ?? model.contextWindow,
+          maxTokens: spec.gatewayMaxTokens ?? model.maxTokens,
         },
       }));
     } catch {
@@ -472,8 +477,12 @@ function createRegisteredProvider(
               ...(template?.reasoning !== undefined ? { reasoning: template.reasoning } : {}),
               ...(template?.input !== undefined ? { input: template.input } : {}),
               ...(template?.inputLimits !== undefined ? { inputLimits: template.inputLimits } : {}),
-              ...(template?.contextWindow !== undefined ? { contextWindow: template.contextWindow } : {}),
-              ...(template?.maxTokens !== undefined ? { maxTokens: template.maxTokens } : {}),
+              ...(registration.gatewayContextWindow !== undefined
+                ? { contextWindow: registration.gatewayContextWindow }
+                : template?.contextWindow !== undefined ? { contextWindow: template.contextWindow } : {}),
+              ...(registration.gatewayMaxTokens !== undefined
+                ? { maxTokens: registration.gatewayMaxTokens }
+                : template?.maxTokens !== undefined ? { maxTokens: template.maxTokens } : {}),
             },
           }));
         },
@@ -491,7 +500,11 @@ function customProviderRegistrations(
   // registered or queried in a restricted build.
   const storedModels = (provider.models ?? []).filter((model) =>
     !enterprisePolicy || isEnterpriseModelAllowed(enterprisePolicy, model));
-  if (enterprisePolicy && (!isOpenAiGatewayProvider(provider) || storedModels.length === 0)) {
+  if (enterprisePolicy && (
+    !isOpenAiGatewayProvider(provider)
+    || provider.type !== "openai-completions"
+    || provider.baseUrl.replace(/\/$/u, "") !== enterprisePolicy.baseUrl
+  )) {
     return [];
   }
   const modelsByProvider = new Map<string, BrowserProviderModelDefinition[]>();
@@ -512,6 +525,10 @@ function customProviderRegistrations(
     modelsByProvider.set(model.provider, definitions);
   }
 
+  if (modelsByProvider.size === 0 && enterprisePolicy && isOpenAiGatewayProvider(provider)
+      && provider.gatewayProviderName) {
+    modelsByProvider.set(provider.gatewayProviderName, []);
+  }
   if (modelsByProvider.size === 0) return [];
   if (
     provider.type !== "openai-completions"
@@ -528,6 +545,10 @@ function customProviderRegistrations(
     api: providerApi,
     baseUrl: provider.baseUrl,
     models,
+    ...(enterprisePolicy && provider.gatewayContextWindow !== undefined
+      ? { gatewayContextWindow: provider.gatewayContextWindow } : {}),
+    ...(enterprisePolicy && provider.gatewayMaxTokens !== undefined
+      ? { gatewayMaxTokens: provider.gatewayMaxTokens } : {}),
     // Manual gateways intentionally skip discovery in regular builds. Enterprise
     // gateways discover the approved API catalogue at <baseUrl>/models.
     ...(isOpenAiGatewayProvider(provider) && !enterprisePolicy ? { modelsUrl: null } : {}),
@@ -628,6 +649,10 @@ export class BrowserModelRuntime {
         this.modelCatalogs.configure(provider.id, {
           api: registration.api,
           baseUrl: provider.baseUrl ?? normalizeHttpUrl(registration.baseUrl, "Provider baseUrl"),
+          ...(registration.gatewayContextWindow !== undefined
+            ? { gatewayContextWindow: registration.gatewayContextWindow } : {}),
+          ...(registration.gatewayMaxTokens !== undefined
+            ? { gatewayMaxTokens: registration.gatewayMaxTokens } : {}),
         });
         this.models.setProvider(provider);
         nextIds.add(registration.id);
