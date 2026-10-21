@@ -9,6 +9,7 @@ import type { CustomProvider } from "../src/storage/local/custom-providers-store
 
 import {
   DEFAULT_OPENAI_GATEWAY_CONTEXT_WINDOW,
+  collectCustomProviderRuntimeInfo,
   deleteOpenAiGatewayConfig,
   listOpenAiGatewayConfigs,
   resolveCustomProviderModel,
@@ -424,6 +425,9 @@ void test("discovery-only gateway persists output tokens and remains editable af
   assert.equal(edited.contextWindow, 262_144);
   assert.equal(edited.providerName, gateway.providerName);
   assert.equal((await store.get(gateway.id))?.gatewayMaxTokens, 32_768);
+  const info = collectCustomProviderRuntimeInfo(await store.getAll());
+  assert.ok(info.providerNames.has(gateway.providerName));
+  assert.equal(info.providerNames.has(gateway.displayName), false);
 });
 
 void test("gateway max output tokens override is validated and stored", async () => {
