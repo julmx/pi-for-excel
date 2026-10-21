@@ -441,7 +441,7 @@ export function collectCustomProviderRuntimeInfo(
         }
       }
     } else {
-      const directName = normalizeOptionalString(provider.name);
+      const directName = normalizeOptionalString(provider.gatewayProviderName || provider.name);
       if (directName.length > 0) {
         namesForProvider.add(directName);
       }
