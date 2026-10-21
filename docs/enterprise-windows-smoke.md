@@ -19,8 +19,8 @@ stock Pi for Excel installation.
   trust settings. **Obtain IT approval before doing this on a managed PC.**
 - An approved HTTPS OpenAI-compatible company API that supports CORS from
   `https://127.0.0.1:3141` and, for workbook-editing agents, tool calling.
-- An initial model ID exposed by the API (the add-in can discover other
-  models later from `<baseUrl>/models`).
+- No initial model ID is necessary. The add-in discovers the available models
+  from the approved `<baseUrl>/models` endpoint.
 
 Do **not** write an API key to a build variable, manifest, shell script,
 public repository, or issue. Use the custom gateway's runtime credential
@@ -123,7 +123,9 @@ controls or import the XML as Excel's legacy XML Expansion Pack.
 1. Create a **new disposable workbook**, with synthetic names and numbers.
 2. In the add-in, open `/settings` and configure **Custom
    OpenAI-compatible gateway** with exactly the same approved base URL.
-   Supply one model ID and the runtime credential (if required).
+   Leave **Model ID** blank to discover every listed model. Configure **Max
+   context tokens** and **Max output tokens** to appropriate gateway limits
+   (both are persisted), and supply the runtime credential if required.
 3. Use the model selector. The restricted build may discover additional
    models through the approved API's `/models` endpoint.
 4. Ask: `Which sheet is active and what is in A1:B3?`
