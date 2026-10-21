@@ -388,3 +388,63 @@ void test("a restarted runtime resolves custom providers and their credentials",
   assert.equal((await restarted.models.getAuth(gateway.providerName))?.auth.apiKey, "runtime-key");
   assert.ok(restarted.models.getModel(gateway.providerName, "runtime-model"));
 });
+
+
+void test("manual gateway retains model requirement outside Enterprise", async () => {
+  const store = new MemoryCustomProvidersStore();
+  await assert.rejects(
+    saveOpenAiGatewayConfig(store, { endpointUrl: "https://gateway.example.com/v1" }),
+    /Model ID is required/u,
+  );
+});
+
+void test("discovery-only gateway persists output tokens and remains editable after restart", async () => {
+  const store = new MemoryCustomProvidersStore();
+  const gateway = await saveOpenAiGatewayConfig(store, {
+    displayName: "Corporate",
+    endpointUrl: "https://gateway.example.com/v1",
+    allowDiscoveryOnly: true,
+    contextWindow: 262_144,
+    maxTokens: 32_768,
+  });
+  assert.equal(gateway.modelId, "");
+  assert.equal(gateway.maxTokens, 32_768);
+  assert.deepEqual((await store.get(gateway.id))?.models, []);
+  const configs = await listOpenAiGatewayConfigs(store);
+  assert.equal(configs[0]?.contextWindow, 262_144);
+  assert.equal(configs[0]?.maxTokens, 32_768);
+
+  const edited = await saveOpenAiGatewayConfig(store, {
+    id: gateway.id,
+    displayName: "Corporate",
+    endpointUrl: gateway.endpointUrl,
+    allowDiscoveryOnly: true,
+  });
+  assert.equal(edited.maxTokens, 32_768);
+  assert.equal(edited.contextWindow, 262_144);
+  assert.equal(edited.providerName, gateway.providerName);
+  assert.equal((await store.get(gateway.id))?.gatewayMaxTokens, 32_768);
+});
+
+void test("gateway max output tokens override is validated and stored", async () => {
+  const store = new MemoryCustomProvidersStore();
+  const saved = await saveOpenAiGatewayConfig(store, {
+    endpointUrl: "https://gateway.example.com/v1",
+    modelId: "model-large",
+    contextWindow: 128_000,
+    maxTokens: 24_000,
+  });
+  assert.equal(saved.maxTokens, 24_000);
+  assert.equal((await store.get(saved.id))?.models?.[0]?.maxTokens, 24_000);
+  for (const maxTokens of [0, 130_000, 1.5]) {
+    await assert.rejects(
+      saveOpenAiGatewayConfig(store, {
+        endpointUrl: "https://gateway.example.com/v1",
+        modelId: "model-bad",
+        contextWindow: 128_000,
+        maxTokens,
+      }),
+      /Max output tokens must be/u,
+    );
+  }
+});
