@@ -13,14 +13,21 @@ const ENDPOINTS = new Map([
   ["chat/completions", "POST"],
 ]);
 
-export function resolveEnterpriseRelayTarget(apiBaseUrl, path, method) {
+export function resolveEnterpriseRelayTarget(apiBaseUrls, path, method) {
   if (typeof path !== "string" || typeof method !== "string") return null;
   if (!path.startsWith(RELAY_PREFIX)) return null;
 
-  const suffix = path.slice(RELAY_PREFIX.length);
+  const routes = Array.isArray(apiBaseUrls) ? apiBaseUrls : [apiBaseUrls];
+  const subpath = path.slice(RELAY_PREFIX.length);
+  const indexed = /^(\\d+)\\/(models|chat\\/completions)$/u.exec(subpath);
+  // Preserve the historical unindexed route for the first gateway.
+  const index = indexed ? Number(indexed[1]) : 0;
+  const suffix = indexed ? indexed[2] : subpath;
+  if (!Number.isSafeInteger(index) || index < 0 || index >= routes.length) return null;
+  if (indexed && index === 0) return null;
   if (ENDPOINTS.get(suffix) !== method.toUpperCase()) return null;
 
-  const upstream = new URL(apiBaseUrl);
+  const upstream = new URL(routes[index]);
   if (upstream.protocol !== "https:" || !upstream.hostname ||
       upstream.username || upstream.password || upstream.search || upstream.hash) {
     throw new Error("Enterprise relay requires an approved HTTPS API base URL.");
@@ -32,12 +39,12 @@ export function resolveEnterpriseRelayTarget(apiBaseUrl, path, method) {
   return upstream;
 }
 
-export function handleEnterpriseApiRelay(req, res, apiBaseUrl, path) {
+export function handleEnterpriseApiRelay(req, res, apiBaseUrls, path) {
   if (!path.startsWith(RELAY_PREFIX)) return false;
 
   let target;
   try {
-    target = resolveEnterpriseRelayTarget(apiBaseUrl, path, req.method || "");
+    target = resolveEnterpriseRelayTarget(apiBaseUrls, path, req.method || "");
   } catch {
     res.writeHead(500, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify({ error: { message: "Enterprise relay configuration is invalid." } }));
