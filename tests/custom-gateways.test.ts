@@ -452,3 +452,46 @@ void test("gateway max output tokens override is validated and stored", async ()
     );
   }
 });
+
+
+void test("gateway reasoning opt-in is model-specific, persisted and editable", async () => {
+  const store = new MemoryCustomProvidersStore();
+  const created = await saveOpenAiGatewayConfig(store, {
+    endpointUrl: "https://gateway.example.com/v1",
+    allowDiscoveryOnly: true,
+    reasoningModelIds: [" model-A ", "model-A", "model-B"],
+  });
+  assert.deepEqual(created.reasoningModelIds, ["model-A", "model-B"]);
+  assert.deepEqual((await store.get(created.id))?.gatewayReasoningModelIds,
+    ["model-A", "model-B"]);
+  assert.deepEqual((await listOpenAiGatewayConfigs(store))[0]?.reasoningModelIds,
+    ["model-A", "model-B"]);
+
+  const updated = await saveOpenAiGatewayConfig(store, {
+    id: created.id,
+    endpointUrl: created.endpointUrl,
+    allowDiscoveryOnly: true,
+  });
+  assert.deepEqual(updated.reasoningModelIds, ["model-A", "model-B"]);
+  const disabled = await saveOpenAiGatewayConfig(store, {
+    id: created.id,
+    endpointUrl: created.endpointUrl,
+    allowDiscoveryOnly: true,
+    reasoningModelIds: [],
+  });
+  assert.deepEqual(disabled.reasoningModelIds, []);
+});
+
+void test("gateway does not accept malformed reasoning model IDs", async () => {
+  const store = new MemoryCustomProvidersStore();
+  await assert.rejects(saveOpenAiGatewayConfig(store, {
+    endpointUrl: "https://gateway.example.com/v1",
+    allowDiscoveryOnly: true,
+    reasoningModelIds: ["bad,model"],
+  }), /Reasoning model IDs/u);
+  await assert.rejects(saveOpenAiGatewayConfig(store, {
+    endpointUrl: "https://gateway.example.com/v1",
+    allowDiscoveryOnly: true,
+    reasoningModelIds: ["x".repeat(257)],
+  }), /Reasoning model IDs/u);
+});
