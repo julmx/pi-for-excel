@@ -8,12 +8,16 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { OPENAI_GATEWAY_PROVIDER_PREFIX } from "./custom-gateways.js";
 
 export interface EnterpriseModelPolicy {
+  /** First approved endpoint, kept for backward compatibility. */
   baseUrl: string;
+  /** All approved API base URLs. Model selection cannot expand this list. */
+  baseUrls: readonly string[];
 }
 
 export interface EnterpriseModelPolicyConfig {
   enabled: boolean;
   baseUrl?: string;
+  baseUrls?: readonly string[];
 }
 
 function normalizeApprovedBaseUrl(raw: string): string {
@@ -49,16 +53,37 @@ export function parseEnterpriseModelPolicy(
 ): EnterpriseModelPolicy | null {
   if (!config.enabled) return null;
 
-  const baseUrl = normalizeApprovedBaseUrl(config.baseUrl ?? "");
-  return { baseUrl };
+  const submitted = config.baseUrls ?? (config.baseUrl === undefined ? [] : [config.baseUrl]);
+  if (submitted.length === 0 || submitted.length > 8) {
+    throw new Error("Enterprise requires between 1 and 8 approved API base URLs.");
+  }
+  const baseUrls = [...new Set(submitted.map(normalizeApprovedBaseUrl))];
+  const baseUrl = baseUrls[0];
+  if (!baseUrl) throw new Error("Enterprise API base URL is required.");
+  return { baseUrl, baseUrls };
 }
 
 /** The build deliberately contains only endpoint URL, never API keys. */
 export function readBuildEnterpriseModelPolicy(): EnterpriseModelPolicy | null {
   const env = import.meta.env;
+  const enabled = env?.VITE_PI_ENTERPRISE_MODE === "true";
+  const json = env?.VITE_PI_ENTERPRISE_API_BASE_URLS;
+  let baseUrls: string[] | undefined;
+  if (enabled && json) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      throw new Error("Invalid Enterprise approved API URL list.");
+    }
+    if (!Array.isArray(parsed) || !parsed.every((value) => typeof value === "string")) {
+      throw new Error("Enterprise approved API URL list must be a JSON array of strings.");
+    }
+    baseUrls = parsed as string[];
+  }
   return parseEnterpriseModelPolicy({
-    enabled: env?.VITE_PI_ENTERPRISE_MODE === "true",
-    baseUrl: env?.VITE_PI_ENTERPRISE_API_BASE_URL ?? "",
+    enabled,
+    ...(baseUrls !== undefined ? { baseUrls } : { baseUrl: env?.VITE_PI_ENTERPRISE_API_BASE_URL ?? "" }),
   });
 }
 
@@ -72,7 +97,7 @@ export function isEnterpriseModelAllowed(
 
   try {
     // Check the complete API base path; comparing hostnames is insufficient.
-    return normalizeApprovedBaseUrl(model.baseUrl) === policy.baseUrl;
+    return policy.baseUrls.includes(normalizeApprovedBaseUrl(model.baseUrl));
   } catch {
     return false;
   }
@@ -102,7 +127,7 @@ export function assertEnterpriseModelAllowed(
       );
     }
     throw new Error(
-      "Enterprise model configuration mismatch. Select a model from the approved Custom OpenAI-compatible gateway and verify that its API base URL exactly matches the URL used to build this add-in.",
+      "Enterprise model configuration mismatch. Select a model from an approved Custom OpenAI-compatible gateway and verify that its API base URL is in the list used to build this add-in.",
     );
   }
 }
