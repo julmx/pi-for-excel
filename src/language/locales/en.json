@@ -78,6 +78,8 @@
   "custom-gateway.configLabelApiKey": "API key",
   "custom-gateway.configLabelContextWindow": "Max context tokens",
   "custom-gateway.configLabelEndpoint": "Endpoint",
+  "custom-gateway.enterpriseNotApproved": "Not approved in this Enterprise build — restart with this API in -ApiBaseUrls",
+  "custom-gateway.enterpriseApproved": "Approved in this Enterprise build",
   "custom-gateway.configLabelModel": "Model",
   "custom-gateway.configLabelMaxTokens": "Max output tokens",
   "custom-gateway.configLabelName": "Name",
