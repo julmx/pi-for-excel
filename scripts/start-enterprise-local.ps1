@@ -2,8 +2,10 @@
 # No real workbook data or API credentials should be used during initial testing.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
     [string]$ApiBaseUrl,
+
+    # Explicit deployment allowlist: these URLs cannot be added from the taskpane UI.
+    [string[]]$ApiBaseUrls,
 
     [switch]$SkipInstall,
 
@@ -28,11 +30,26 @@ function Invoke-Checked {
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Push-Location $root
 try {
-    $parsed = $null
-    $valid = [Uri]::TryCreate($ApiBaseUrl, [UriKind]::Absolute, [ref]$parsed)
-    if (-not $valid -or $parsed.Scheme -ne "https" -or -not $parsed.Host -or
-        $parsed.UserInfo -or $parsed.Query -or $parsed.Fragment) {
-        throw "ApiBaseUrl must be an HTTPS API base URL without credentials, a query, or a fragment."
+    if ($ApiBaseUrl -and $ApiBaseUrls) {
+        throw "Choose either -ApiBaseUrl or -ApiBaseUrls, not both."
+    }
+    $urls = if ($ApiBaseUrls) { @($ApiBaseUrls) } elseif ($ApiBaseUrl) { @($ApiBaseUrl) } else { @() }
+    if ($urls.Count -lt 1 -or $urls.Count -gt 8) {
+        throw "Specify 1 to 8 approved HTTPS API base URLs."
+    }
+    $approved = @()
+    foreach ($candidate in $urls) {
+        $parsed = $null
+        $valid = [Uri]::TryCreate($candidate, [UriKind]::Absolute, [ref]$parsed)
+        if (-not $valid -or $parsed.Scheme -ne "https" -or -not $parsed.Host -or
+            $parsed.UserInfo -or $parsed.Query -or $parsed.Fragment) {
+            throw "Each approved API base URL must be HTTPS without credentials, query or fragment."
+        }
+        $normalized = $candidate.TrimEnd("/")
+        if ($approved -contains $normalized) {
+            throw "Duplicate approved API base URL: $normalized"
+        }
+        $approved += $normalized
     }
 
     foreach ($executable in @("node", "npm.cmd")) {
@@ -72,7 +89,8 @@ Certificates stay on your machine and are ignored by Git.
 
     # Endpoint only, not a secret. NEVER place the corporate API key in VITE_*.
     $env:VITE_PI_ENTERPRISE_MODE = "true"
-    $env:VITE_PI_ENTERPRISE_API_BASE_URL = $ApiBaseUrl.TrimEnd("/")
+    $env:VITE_PI_ENTERPRISE_API_BASE_URL = $approved[0]
+    $env:VITE_PI_ENTERPRISE_API_BASE_URLS = ConvertTo-Json -InputObject @($approved) -Compress
     $env:VITE_PI_ENTERPRISE_LOCAL_API_RELAY = if ($UseLocalApiRelay) { "true" } else { "false" }
     # Override inherited developer/CI values: the local origins are fixed.
     $env:VITE_PI_ENTERPRISE_TASKPANE_ORIGIN = "https://127.0.0.1:3141"
@@ -84,6 +102,7 @@ Certificates stay on your machine and are ignored by Git.
     # These must match the build-time URL; the HTTPS server applies the CSP.
     $env:ENTERPRISE_MODE = "1"
     $env:ENTERPRISE_API_BASE_URL = $env:VITE_PI_ENTERPRISE_API_BASE_URL
+    $env:ENTERPRISE_API_BASE_URLS = $env:VITE_PI_ENTERPRISE_API_BASE_URLS
     $env:ENTERPRISE_LOCAL_API_RELAY = if ($UseLocalApiRelay) { "1" } else { "0" }
     $env:PORT = "3141"
 
@@ -92,7 +111,7 @@ Certificates stay on your machine and are ignored by Git.
     Write-Host "Manifest: $root\manifest.enterprise.local.xml"
     Write-Host "Taskpane: https://127.0.0.1:3141/src/taskpane.html"
     Write-Host "Isolated Python runner: https://localhost:3142/enterprise-runner.html"
-    Write-Host "Approved API: $($env:ENTERPRISE_API_BASE_URL)"
+    Write-Host "Approved APIs: $($approved -join ', ')"
     Write-Host "Local API relay enabled: $($UseLocalApiRelay.IsPresent)"
     Write-Host "Keep this terminal open and load the manifest via Excel > Add-ins."
     Write-Host "Press Ctrl+C here to stop the server."
