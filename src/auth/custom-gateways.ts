@@ -121,7 +121,7 @@ export function normalizeGatewayMaxTokens(maxTokens: number | null | undefined, 
 export function normalizeGatewayReasoningModelIds(modelIds: readonly string[]): string[] {
   if (modelIds.length > 100) throw new Error("At most 100 reasoning model IDs are allowed.");
   const result = Array.from(new Set(modelIds.map((id) => id.trim()).filter(Boolean)));
-  if (result.some((id) => id.length > 256 || /[\\r\\n,]/u.test(id))) {
+  if (result.some((id) => id.length > 256 || /[\r\n,]/u.test(id))) {
     throw new Error("Reasoning model IDs must be at most 256 characters and cannot contain commas.");
   }
   return result;
