@@ -113,6 +113,14 @@ function createGatewayCard(args: {
   keyState.textContent = args.gateway.apiKey.length > 0 ? t("custom-gateway.gatewayApiKeyConfigured") : t("custom-gateway.gatewayApiKeyNone");
 
   card.append(topRow, endpoint, model, contextWindow, maxTokens, keyState);
+  if (args.gateway.reasoningModelIds.length > 0) {
+    const thinking = document.createElement("p");
+    thinking.className = "pi-settings-gateway-item__meta";
+    thinking.textContent = t("custom-gateway.gatewayReasoningModels", {
+      models: args.gateway.reasoningModelIds.join(", "),
+    });
+    card.appendChild(thinking);
+  }
 
   const enterprisePolicy = readBuildEnterpriseModelPolicy();
   if (enterprisePolicy) {
@@ -173,6 +181,11 @@ export async function buildCustomGatewaySection(
   maxTokensInput.step = "1";
   maxTokensInput.inputMode = "numeric";
 
+  const reasoningModelIdsInput = createConfigInput({
+    placeholder: t("custom-gateway.reasoningModelIdsPlaceholder"),
+  });
+  reasoningModelIdsInput.spellcheck = false;
+
   const apiKeyInput = createConfigInput({
     placeholder: t("custom-gateway.apiKeyPlaceholder"),
     type: "password",
@@ -208,6 +221,10 @@ export async function buildCustomGatewaySection(
     ),
     createConfigRow(t("custom-gateway.configLabelMaxTokens"), maxTokensInput),
     createHint(t("custom-gateway.maxTokensHint")),
+    ...(enterpriseMode ? [
+      createConfigRow(t("custom-gateway.configLabelReasoningModels"), reasoningModelIdsInput),
+      createHint(t("custom-gateway.reasoningModelsHint")),
+    ] : []),
     createConfigRow(t("custom-gateway.configLabelApiKey"), apiKeyInput),
     errorText,
     formActions,
@@ -241,6 +258,7 @@ export async function buildCustomGatewaySection(
     modelInput.value = "";
     contextWindowInput.value = "";
     maxTokensInput.value = "";
+    reasoningModelIdsInput.value = "";
     apiKeyInput.value = "";
     cancelButton.hidden = true;
     saveButton.textContent = t("custom-gateway.saveGateway");
@@ -254,6 +272,7 @@ export async function buildCustomGatewaySection(
     modelInput.value = gateway.modelId;
     contextWindowInput.value = String(gateway.contextWindow);
     maxTokensInput.value = String(gateway.maxTokens);
+    reasoningModelIdsInput.value = gateway.reasoningModelIds.join(", ");
     apiKeyInput.value = gateway.apiKey;
     cancelButton.hidden = false;
     saveButton.textContent = t("custom-gateway-settings.update-gateway");
@@ -341,6 +360,9 @@ export async function buildCustomGatewaySection(
           apiKey: apiKeyInput.value,
           ...(contextWindow !== undefined ? { contextWindow } : {}),
           ...(maxTokens !== undefined ? { maxTokens } : {}),
+          ...(enterpriseMode ? {
+            reasoningModelIds: reasoningModelIdsInput.value.split(","),
+          } : {}),
         }, options.models);
 
         await reloadGateways();

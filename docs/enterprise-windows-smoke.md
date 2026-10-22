@@ -150,7 +150,16 @@ controls or import the XML as Excel's legacy XML Expansion Pack.
    context tokens** and **Max output tokens** to appropriate gateway limits
    (both are persisted), and supply the runtime credential if required.
 3. Use the model selector. The restricted build may discover additional
-   models through the approved API's `/models` endpoint.
+   models through the approved API's `/models` endpoint. The OpenAI-compatible
+   discovery format usually returns just model IDs, not whether the server
+   accepts adjustable reasoning. By default these models show **Thinking: Off**
+   as their only option. For a model **verified** to support `reasoning_effort`
+   at the configured gateway, edit that gateway and add its exact ID to
+   **Model IDs with adjustable thinking** (comma-separated for several).
+   Refresh/select that model and check that the Thinking menu now offers
+   additional levels. This opt-in changes metadata, not API capabilities:
+   a gateway that ignores or rejects the effort parameter will still not
+   provide functional reasoning controls. Do not enable this for unknown models.
 4. Ask: `Which sheet is active and what is in A1:B3?`
 5. Switch the **Auto / Confirm** mode from the status bar. Check both modes
    with a trivial disposable-cell edit. User confirmation remains optional.

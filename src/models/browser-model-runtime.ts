@@ -72,6 +72,8 @@ export interface BrowserProviderRegistration {
   /** Gateway-wide token limits also apply when no seed model is configured. */
   gatewayContextWindow?: number;
   gatewayMaxTokens?: number;
+  /** Only these discovered model IDs enable adjustable thinking levels. */
+  gatewayReasoningModelIds?: readonly string[];
   /** Omit to derive the discovery URL; null keeps only the supplied models. */
   modelsUrl?: string | null;
   resolveApiKey: () => Promise<string | undefined>;
@@ -93,6 +95,7 @@ interface DynamicProviderCatalogSpec {
   baseUrl: string;
   gatewayContextWindow?: number;
   gatewayMaxTokens?: number;
+  gatewayReasoningModelIds?: readonly string[];
 }
 
 function normalizeNonEmpty(value: string, label: string): string {
@@ -236,7 +239,9 @@ function sanitizeCatalogEntry(
         definition: {
           id: model.id,
           name: model.name,
-          reasoning: model.reasoning,
+          reasoning: spec.gatewayReasoningModelIds !== undefined
+            ? spec.gatewayReasoningModelIds.includes(model.id)
+            : model.reasoning,
           input: model.input,
           inputLimits: model.inputLimits,
           contextWindow: spec.gatewayContextWindow ?? model.contextWindow,
@@ -474,7 +479,9 @@ function createRegisteredProvider(
             baseUrl,
             definition: {
               id: modelId,
-              ...(template?.reasoning !== undefined ? { reasoning: template.reasoning } : {}),
+              ...(registration.gatewayReasoningModelIds !== undefined
+                ? { reasoning: registration.gatewayReasoningModelIds.includes(modelId) }
+                : template?.reasoning !== undefined ? { reasoning: template.reasoning } : {}),
               ...(template?.input !== undefined ? { input: template.input } : {}),
               ...(template?.inputLimits !== undefined ? { inputLimits: template.inputLimits } : {}),
               ...(registration.gatewayContextWindow !== undefined
@@ -549,6 +556,8 @@ function customProviderRegistrations(
       ? { gatewayContextWindow: provider.gatewayContextWindow } : {}),
     ...(enterprisePolicy && provider.gatewayMaxTokens !== undefined
       ? { gatewayMaxTokens: provider.gatewayMaxTokens } : {}),
+    ...(enterprisePolicy && provider.gatewayReasoningModelIds !== undefined
+      ? { gatewayReasoningModelIds: provider.gatewayReasoningModelIds } : {}),
     // Manual gateways intentionally skip discovery in regular builds. Enterprise
     // gateways discover the approved API catalogue at <baseUrl>/models.
     ...(isOpenAiGatewayProvider(provider) && !enterprisePolicy ? { modelsUrl: null } : {}),
@@ -653,6 +662,8 @@ export class BrowserModelRuntime {
             ? { gatewayContextWindow: registration.gatewayContextWindow } : {}),
           ...(registration.gatewayMaxTokens !== undefined
             ? { gatewayMaxTokens: registration.gatewayMaxTokens } : {}),
+          ...(registration.gatewayReasoningModelIds !== undefined
+            ? { gatewayReasoningModelIds: registration.gatewayReasoningModelIds } : {}),
         });
         this.models.setProvider(provider);
         nextIds.add(registration.id);
