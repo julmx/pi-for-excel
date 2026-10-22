@@ -51,7 +51,9 @@ export function getEnterpriseLocalRelayUrl(
         || request.pathname === `${basePath}/chat/completions`);
   });
   if (index < 0) return null;
-  const api = new URL(policy.baseUrls[index]!);
+  const approvedBaseUrl = policy.baseUrls[index];
+  if (!approvedBaseUrl) return null;
+  const api = new URL(approvedBaseUrl);
   const suffix = request.pathname.slice(api.pathname.replace(/\/$/u, "").length + 1);
   const relayPath = index === 0 ? "__enterprise_api" : `__enterprise_api/${index}`;
   return `${new URL(taskpaneOrigin).origin}/${relayPath}/${suffix}`;
