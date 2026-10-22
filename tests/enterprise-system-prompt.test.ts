@@ -59,7 +59,7 @@ void test("enterprise prompt prioritizes native Excel features over approximatio
     enterpriseMode: true,
     executionMode: "yolo",
   });
-  const text = prompt.replace(/\\s+/gu, " ");
+  const text = prompt.replace(/\s+/gu, " ");
   assert.match(text, /Select tools to deliver the Excel feature and behavior the user requested/iu);
   assert.match(text, /Prefer existing structured Excel tools whenever they can deliver the native feature/iu);
   assert.match(text, /If structured tools cannot create or manipulate the requested native Excel feature, use execute_office_js/iu);
