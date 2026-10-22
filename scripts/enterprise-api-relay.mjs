@@ -19,7 +19,7 @@ export function resolveEnterpriseRelayTarget(apiBaseUrls, path, method) {
 
   const routes = Array.isArray(apiBaseUrls) ? apiBaseUrls : [apiBaseUrls];
   const subpath = path.slice(RELAY_PREFIX.length);
-  const indexed = /^(\\d+)\\/(models|chat\\/completions)$/u.exec(subpath);
+  const indexed = /^(\d+)\/(models|chat\/completions)$/u.exec(subpath);
   // Preserve the historical unindexed route for the first gateway.
   const index = indexed ? Number(indexed[1]) : 0;
   const suffix = indexed ? indexed[2] : subpath;
