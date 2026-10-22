@@ -30,6 +30,7 @@ export interface OpenAiGatewayConfig {
   providerName: string;
   contextWindow: number;
   maxTokens: number;
+  reasoningModelIds: string[];
 }
 
 export interface SaveOpenAiGatewayInput {
@@ -40,6 +41,8 @@ export interface SaveOpenAiGatewayInput {
   apiKey?: string;
   contextWindow?: number;
   maxTokens?: number;
+  /** Model IDs confirmed to accept adjustable reasoning through this gateway. */
+  reasoningModelIds?: readonly string[];
   /** Explicit Enterprise opt-in: registration and discovery need no seed model ID. */
   allowDiscoveryOnly?: boolean;
 }
@@ -113,6 +116,15 @@ export function normalizeGatewayMaxTokens(maxTokens: number | null | undefined, 
     throw new Error("Max output tokens must be a whole number between 1 and Max context tokens.");
   }
   return value;
+}
+
+export function normalizeGatewayReasoningModelIds(modelIds: readonly string[]): string[] {
+  if (modelIds.length > 100) throw new Error("At most 100 reasoning model IDs are allowed.");
+  const result = Array.from(new Set(modelIds.map((id) => id.trim()).filter(Boolean)));
+  if (result.some((id) => id.length > 256 || /[\\r\\n,]/u.test(id))) {
+    throw new Error("Reasoning model IDs must be at most 256 characters and cannot contain commas.");
+  }
+  return result;
 }
 
 function deriveDisplayName(rawName: string | undefined, endpointUrl: string): string {
@@ -192,6 +204,7 @@ function providerToGatewayConfig(provider: CustomProvider): OpenAiGatewayConfig 
     providerName,
     contextWindow,
     maxTokens: normalizeGatewayMaxTokens(provider.gatewayMaxTokens ?? model?.maxTokens, contextWindow),
+    reasoningModelIds: normalizeGatewayReasoningModelIds(provider.gatewayReasoningModelIds ?? []),
   };
 }
 
@@ -201,6 +214,7 @@ function createGatewayModel(args: {
   providerName: string;
   contextWindow: number;
   maxTokens: number;
+  reasoning: boolean;
   registryModel?: Model<Api>;
 }): Model<"openai-completions"> {
   const registryModel = args.registryModel;
@@ -212,7 +226,7 @@ function createGatewayModel(args: {
     api: "openai-completions",
     provider: args.providerName,
     baseUrl: args.endpointUrl,
-    reasoning: registryModel?.reasoning ?? false,
+    reasoning: args.reasoning,
     ...(registryModel?.thinkingLevelMap !== undefined
       ? { thinkingLevelMap: registryModel.thinkingLevelMap }
       : {}),
@@ -299,6 +313,9 @@ export async function saveOpenAiGatewayConfig(
         : undefined),
     contextWindow,
   );
+  const reasoningModelIds = normalizeGatewayReasoningModelIds(
+    input.reasoningModelIds ?? editingGateway?.reasoningModelIds ?? [],
+  );
 
   if (input.id) {
     const match = existingGateways.find((gateway) => gateway.id === input.id);
@@ -332,6 +349,7 @@ export async function saveOpenAiGatewayConfig(
     gatewayProviderName: providerName,
     gatewayContextWindow: contextWindow,
     gatewayMaxTokens: maxTokens,
+    gatewayReasoningModelIds: reasoningModelIds,
     models: modelId
       ? [createGatewayModel({
         endpointUrl,
@@ -339,6 +357,7 @@ export async function saveOpenAiGatewayConfig(
         providerName,
         contextWindow,
         maxTokens,
+        reasoning: reasoningModelIds.includes(modelId) || (registryModel?.reasoning ?? false),
         ...(registryModel !== undefined ? { registryModel } : {}),
       })]
       : [],
@@ -358,6 +377,7 @@ export async function saveOpenAiGatewayConfig(
     providerName,
     contextWindow,
     maxTokens,
+    reasoningModelIds,
   };
 }
 
