@@ -8,6 +8,7 @@ import {
 import { isEnterpriseFetchUrlAllowed } from "../src/auth/enterprise-fetch-policy.ts";
 import { saveOpenAiGatewayConfig, type CustomProvidersStoreLike } from "../src/auth/custom-gateways.ts";
 import { BrowserModelRuntime } from "../src/models/browser-model-runtime.ts";
+import { getThinkingLevelsForModel } from "../src/models/thinking-levels.ts";
 import type { CustomProvider } from "../src/storage/local/custom-providers-store.ts";
 
 class MemoryCatalogs implements ModelsStore {
@@ -298,6 +299,8 @@ void test("adjustable reasoning is opt-in per discovered gateway model", async (
   assert.equal(result.errors.size, 0);
   assert.equal(runtime.models.getModel(gateway.providerName, "reasoning-a")?.reasoning, true);
   assert.equal(runtime.models.getModel(gateway.providerName, "ordinary-b")?.reasoning, false);
+  assert.ok(getThinkingLevelsForModel(runtime.models.getModel(gateway.providerName, "reasoning-a") ?? null).length > 1);
+  assert.deepEqual(getThinkingLevelsForModel(runtime.models.getModel(gateway.providerName, "ordinary-b") ?? null), ["off"]);
 
   const saved = catalogs.entries.get(gateway.providerName);
   assert.equal(saved?.models.find((m) => m.id === "reasoning-a")?.reasoning, true);
