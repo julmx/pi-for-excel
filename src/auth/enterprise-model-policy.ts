@@ -79,7 +79,7 @@ export function readBuildEnterpriseModelPolicy(): EnterpriseModelPolicy | null {
     if (!Array.isArray(parsed) || !parsed.every((value) => typeof value === "string")) {
       throw new Error("Enterprise approved API URL list must be a JSON array of strings.");
     }
-    baseUrls = parsed as string[];
+    baseUrls = parsed;
   }
   return parseEnterpriseModelPolicy({
     enabled,
