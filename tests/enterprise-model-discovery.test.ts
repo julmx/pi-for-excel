@@ -219,12 +219,16 @@ void test("each approved enterprise gateway discovers and exposes its own models
   });
   assert.ok(multiple);
   const providers = new MemoryProviders();
+  const firstUrl = multiple.baseUrls[0];
+  const secondUrl = multiple.baseUrls[1];
+  assert.ok(firstUrl);
+  assert.ok(secondUrl);
   const first = await saveOpenAiGatewayConfig(providers, {
-    displayName: "Quality check", endpointUrl: multiple.baseUrls[0]!,
+    displayName: "Quality check", endpointUrl: firstUrl,
     apiKey: "fake-key-a", allowDiscoveryOnly: true,
   });
   const second = await saveOpenAiGatewayConfig(providers, {
-    displayName: "GenX", endpointUrl: multiple.baseUrls[1]!,
+    displayName: "GenX", endpointUrl: secondUrl,
     apiKey: "fake-key-b", allowDiscoveryOnly: true,
   });
   const unauthorized = await saveOpenAiGatewayConfig(providers, {
