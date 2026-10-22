@@ -13,6 +13,8 @@ interface ImportMetaEnv {
   readonly VITE_PI_ENTERPRISE_MODE?: string;
   /** Approved HTTPS base URL for an internal OpenAI-compatible gateway (never a secret). */
   readonly VITE_PI_ENTERPRISE_API_BASE_URL?: string;
+  /** JSON array of approved HTTPS gateway base URLs for restricted multi-gateway deployments. */
+  readonly VITE_PI_ENTERPRISE_API_BASE_URLS?: string;
   /** Set to "false" to preserve original image dimensions and encoded sizes. */
   readonly VITE_PI_AUTO_RESIZE_IMAGES?: string;
   /** Dev-only loopback URL for the background verification bridge, e.g. "https://localhost:3157". */

@@ -207,3 +207,65 @@ void test("enterprise never registers a discovery-only gateway pointing outside 
   assert.deepEqual(runtime.models.getProviders().filter((provider) =>
     provider.id.startsWith("Gateway · ")), []);
 });
+
+
+void test("each approved enterprise gateway discovers and exposes its own models", async () => {
+  const multiple = parseEnterpriseModelPolicy({
+    enabled: true,
+    baseUrls: [
+      "https://private-a.example.invalid/v1",
+      "https://private-b.example.invalid/api",
+    ],
+  });
+  assert.ok(multiple);
+  const providers = new MemoryProviders();
+  const firstUrl = multiple.baseUrls[0];
+  const secondUrl = multiple.baseUrls[1];
+  assert.ok(firstUrl);
+  assert.ok(secondUrl);
+  const first = await saveOpenAiGatewayConfig(providers, {
+    displayName: "Quality check", endpointUrl: firstUrl,
+    apiKey: "fake-key-a", allowDiscoveryOnly: true,
+  });
+  const second = await saveOpenAiGatewayConfig(providers, {
+    displayName: "GenX", endpointUrl: secondUrl,
+    apiKey: "fake-key-b", allowDiscoveryOnly: true,
+  });
+  const unauthorized = await saveOpenAiGatewayConfig(providers, {
+    displayName: "Unauthorized", endpointUrl: "https://unknown.example.invalid/api",
+    allowDiscoveryOnly: true,
+  });
+  const requests: string[] = [];
+  const runtime = new BrowserModelRuntime({
+    enterprisePolicy: multiple,
+    providerKeys: {
+      get: () => Promise.resolve(null), set: () => Promise.resolve(),
+      delete: () => Promise.resolve(), list: () => Promise.resolve([]),
+    },
+    modelCatalogs: new MemoryCatalogs(),
+    getProxyUrl: () => Promise.resolve("https://unapproved-proxy.example.invalid"),
+    fetchFn: (input, init) => {
+      const url = typeof input === "string"
+        ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push(url);
+      const key = new Headers(init?.headers).get("Authorization");
+      if (url === "https://private-a.example.invalid/v1/models") {
+        assert.equal(key, "Bearer fake-key-a");
+        return Promise.resolve(Response.json({ data: [{ id: "quality-model" }] }));
+      }
+      assert.equal(url, "https://private-b.example.invalid/api/models");
+      assert.equal(key, "Bearer fake-key-b");
+      return Promise.resolve(Response.json({ data: [{ id: "genx-model" }] }));
+    },
+  });
+  await runtime.syncCustomProviders(await providers.getAll());
+  const result = await runtime.refresh({ allowNetwork: true, force: true });
+  assert.equal(result.errors.size, 0);
+  assert.deepEqual(requests.sort(), [
+    "https://private-a.example.invalid/v1/models",
+    "https://private-b.example.invalid/api/models",
+  ]);
+  assert.deepEqual(runtime.models.getModels(first.providerName).map((m) => m.id), ["quality-model"]);
+  assert.deepEqual(runtime.models.getModels(second.providerName).map((m) => m.id), ["genx-model"]);
+  assert.equal(runtime.models.getProvider(unauthorized.providerName), undefined);
+});

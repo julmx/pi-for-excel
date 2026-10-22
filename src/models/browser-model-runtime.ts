@@ -503,7 +503,7 @@ function customProviderRegistrations(
   if (enterprisePolicy && (
     !isOpenAiGatewayProvider(provider)
     || provider.type !== "openai-completions"
-    || provider.baseUrl.replace(/\/$/u, "") !== enterprisePolicy.baseUrl
+    || !enterprisePolicy.baseUrls.includes(provider.baseUrl.replace(/\/$/u, ""))
   )) {
     return [];
   }

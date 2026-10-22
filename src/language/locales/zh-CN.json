@@ -78,6 +78,8 @@
   "custom-gateway.configLabelApiKey": "API 密钥",
   "custom-gateway.configLabelContextWindow": "最大上下文 token 数",
   "custom-gateway.configLabelEndpoint": "端点",
+  "custom-gateway.enterpriseNotApproved": "此企业版本未批准——请将此 API 添加到 -ApiBaseUrls 后重新启动",
+  "custom-gateway.enterpriseApproved": "此企业版本已批准",
   "custom-gateway.configLabelModel": "模型",
   "custom-gateway.configLabelMaxTokens": "最大输出 Token 数",
   "custom-gateway.configLabelName": "名称",

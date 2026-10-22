@@ -18,13 +18,14 @@ export function isEnterpriseFetchUrlAllowed(
     if (request.protocol !== "https:") return false;
     if (request.origin === taskpane.origin) return true;
 
-    const api = new URL(policy.baseUrl);
-    if (request.origin !== api.origin) return false;
     if (request.search || request.hash) return false;
-
-    const path = api.pathname.replace(/\/$/u, "");
-    return request.pathname === `${path}/models`
-      || request.pathname === `${path}/chat/completions`;
+    return policy.baseUrls.some((baseUrl) => {
+      const api = new URL(baseUrl);
+      if (request.origin !== api.origin) return false;
+      const path = api.pathname.replace(/\/$/u, "");
+      return request.pathname === `${path}/models`
+        || request.pathname === `${path}/chat/completions`;
+    });
   } catch {
     return false;
   }
@@ -42,13 +43,20 @@ export function getEnterpriseLocalRelayUrl(
 ): string | null {
   if (!isEnterpriseFetchUrlAllowed(policy, requestedUrl, taskpaneOrigin)) return null;
   const request = new URL(requestedUrl, taskpaneOrigin);
-  const api = new URL(policy.baseUrl);
-  if (request.origin !== api.origin) return null;
-
-  const basePath = api.pathname.replace(/\/$/u, "");
-  const suffix = request.pathname.slice(basePath.length + 1);
-  if (suffix !== "models" && suffix !== "chat/completions") return null;
-  return `${new URL(taskpaneOrigin).origin}/__enterprise_api/${suffix}`;
+  const index = policy.baseUrls.findIndex((baseUrl) => {
+    const api = new URL(baseUrl);
+    const basePath = api.pathname.replace(/\/$/u, "");
+    return request.origin === api.origin
+      && (request.pathname === `${basePath}/models`
+        || request.pathname === `${basePath}/chat/completions`);
+  });
+  if (index < 0) return null;
+  const approvedBaseUrl = policy.baseUrls[index];
+  if (!approvedBaseUrl) return null;
+  const api = new URL(approvedBaseUrl);
+  const suffix = request.pathname.slice(api.pathname.replace(/\/$/u, "").length + 1);
+  const relayPath = index === 0 ? "__enterprise_api" : `__enterprise_api/${index}`;
+  return `${new URL(taskpaneOrigin).origin}/${relayPath}/${suffix}`;
 }
 
 /**
@@ -65,10 +73,11 @@ export function getEnterpriseStreamBaseUrl(
   modelBaseUrl: string,
   taskpaneOrigin: string,
 ): string {
-  const approved = new URL(policy.baseUrl);
   const supplied = new URL(modelBaseUrl);
   const normalized = (url: URL): string => url.href.replace(/\/$/u, "");
-  if (normalized(supplied) !== normalized(approved)) {
+  const index = policy.baseUrls.findIndex((baseUrl) =>
+    normalized(supplied) === normalized(new URL(baseUrl)));
+  if (index < 0) {
     throw new Error("Enterprise relay refused a model with an unapproved API base URL.");
   }
 
@@ -77,5 +86,7 @@ export function getEnterpriseStreamBaseUrl(
       || origin.pathname !== "/" || origin.search || origin.hash || origin.username || origin.password) {
     throw new Error("Local enterprise relay requires the HTTPS loopback taskpane origin.");
   }
-  return `${origin.origin}/__enterprise_api`;
+  return index === 0
+    ? `${origin.origin}/__enterprise_api`
+    : `${origin.origin}/__enterprise_api/${index}`;
 }

@@ -89,3 +89,29 @@ void test("enterprise policy errors explain invalid bootstrap and provider confi
     /model configuration mismatch/u,
   );
 });
+
+
+void test("enterprise allows models from each explicitly approved gateway, never arbitrary configured endpoints", () => {
+  const policy = parseEnterpriseModelPolicy({
+    enabled: true,
+    baseUrls: [
+      "https://private-a.example.invalid/v1/",
+      "https://private-b.example.invalid/api",
+    ],
+  });
+  assert.ok(policy);
+  assert.deepEqual(policy.baseUrls, [
+    "https://private-a.example.invalid/v1",
+    "https://private-b.example.invalid/api",
+  ]);
+  for (const baseUrl of policy.baseUrls) {
+    assert.equal(isEnterpriseModelAllowed(policy, { ...validModel, baseUrl }), true);
+  }
+  assert.equal(isEnterpriseModelAllowed(policy, {
+    ...validModel, baseUrl: "https://other.example.invalid/v1",
+  }), false);
+  assert.throws(() => parseEnterpriseModelPolicy({ enabled: true, baseUrls: [] }));
+  assert.throws(() => parseEnterpriseModelPolicy({
+    enabled: true, baseUrls: ["https://private-a.example.invalid/v1", "http://bad.example.invalid/v1"],
+  }));
+});

@@ -64,3 +64,34 @@ void test("SDK streaming relay refuses unapproved models and non-local origins",
     assert.throws(() => getEnterpriseStreamBaseUrl(policy, policy.baseUrl, pane));
   }
 });
+
+
+void test("multi-gateway relay never accepts unlisted destinations or arbitrary upstream URLs", () => {
+  const multiple = parseEnterpriseModelPolicy({
+    enabled: true,
+    baseUrls: [
+      "https://company.example.invalid/llm/v1",
+      "https://internal-b.example.invalid/api",
+    ],
+  });
+  assert.ok(multiple);
+  assert.equal(
+    getEnterpriseLocalRelayUrl(multiple, "https://internal-b.example.invalid/api/models", origin),
+    origin + "/__enterprise_api/1/models",
+  );
+  assert.equal(
+    getEnterpriseLocalRelayUrl(multiple, "https://internal-b.example.invalid/api/chat/completions", origin),
+    origin + "/__enterprise_api/1/chat/completions",
+  );
+  assert.equal(
+    getEnterpriseStreamBaseUrl(multiple, "https://internal-b.example.invalid/api", origin),
+    origin + "/__enterprise_api/1",
+  );
+  assert.equal(
+    getEnterpriseLocalRelayUrl(multiple, "https://unknown.example.invalid/api/models", origin),
+    null,
+  );
+  assert.throws(() => getEnterpriseStreamBaseUrl(
+    multiple, "https://unknown.example.invalid/api", origin,
+  ));
+});
