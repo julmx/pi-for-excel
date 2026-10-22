@@ -27,7 +27,7 @@ void test("enterprise agent prompt matches the approved Excel tool registry", ()
   assert.match(prompt, /fill_formula/u);
   assert.match(prompt, /merged\s+group headings/u);
   assert.doesNotMatch(prompt, /workbook_history.*python_transform_range/u);
-  assert.match(prompt.replace(/\s+/gu, " "), /use python_excel instead/iu);
+  assert.match(prompt.replace(/\s+/gu, " "), /Use python_excel for data transformations/iu);
   assert.doesNotMatch(prompt, /Two Python tools are always available/iu);
   assert.doesNotMatch(prompt, /run a Python snippet and inspect/iu);
   assert.doesNotMatch(prompt, /in-browser via Pyodide.*no setup required/iu);
@@ -52,4 +52,28 @@ void test("ordinary builds retain their existing richer tool documentation", () 
   assert.match(prompt, /Two Python tools are always available/u);
   assert.match(prompt, /You have a persistent file workspace/u);
   assert.match(prompt, /\*\*extensions_manager\*\*/u);
+});
+
+void test("enterprise prompt prioritizes native Excel features over approximations, not avoiding approval", () => {
+  const prompt = buildSystemPrompt({
+    enterpriseMode: true,
+    executionMode: "yolo",
+  });
+  const text = prompt.replace(/\\s+/gu, " ");
+  assert.match(text, /Select tools to deliver the Excel feature and behavior the user requested/iu);
+  assert.match(text, /Prefer existing structured Excel tools whenever they can deliver the native feature/iu);
+  assert.match(text, /If structured tools cannot create or manipulate the requested native Excel feature, use execute_office_js/iu);
+  assert.match(text, /A required confirmation is never a reason to avoid a suitable native Excel operation/iu);
+  assert.match(text, /Do not silently replace native Excel objects or features with formulas/iu);
+  assert.match(text, /Do not present such workarounds as equivalent/iu);
+  assert.match(text, /user declines approval, explain that limitation/iu);
+  assert.match(text, /Respect an explicit user preference for formulas or simpler static results/iu);
+  assert.match(text, /only use the provided Excel RequestContext/iu);
+  assert.match(text, /not execute_office_js/iu); // Python RPC stays restricted.
+});
+
+void test("regular prompt keeps its existing tool-selection behavior", () => {
+  const prompt = buildSystemPrompt({ enterpriseMode: false });
+  assert.match(prompt, /For workbook features not covered by structured tools/iu);
+  assert.doesNotMatch(prompt, /### Native Excel fidelity and tool selection/u);
 });
