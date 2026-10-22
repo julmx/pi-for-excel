@@ -26,8 +26,13 @@ const PORT = Number.parseInt(process.env.PORT || "3141", 10);
 
 // For restricted local smoke tests, require a separate serving-time policy.
 // Production reverse proxies must supply an equivalent CSP response header.
+const enterpriseApiBaseUrls = process.env.ENTERPRISE_MODE === "1"
+  ? process.env.ENTERPRISE_API_BASE_URLS
+    ? JSON.parse(process.env.ENTERPRISE_API_BASE_URLS)
+    : process.env.ENTERPRISE_API_BASE_URL
+  : null;
 const enterpriseCsp = process.env.ENTERPRISE_MODE === "1"
-  ? buildEnterpriseContentSecurityPolicy(process.env.ENTERPRISE_API_BASE_URL, ENTERPRISE_LOCAL_RUNNER_ORIGIN)
+  ? buildEnterpriseContentSecurityPolicy(enterpriseApiBaseUrls, ENTERPRISE_LOCAL_RUNNER_ORIGIN)
   : null;
 
 const rootDir = path.resolve(process.cwd());
@@ -132,7 +137,7 @@ const serveRequest = (req, res) => {
       // Optional same-origin forwarding, restricted to the approved API
       // and permitted only after the loopback check above.
       if (taskpaneHost && process.env.ENTERPRISE_LOCAL_API_RELAY === "1") {
-        if (handleEnterpriseApiRelay(req, res, process.env.ENTERPRISE_API_BASE_URL, reqPath)) {
+        if (handleEnterpriseApiRelay(req, res, enterpriseApiBaseUrls, reqPath)) {
           return;
         }
       }
