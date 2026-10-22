@@ -38,3 +38,16 @@ void test("isolated runner CSP never receives model gateway access", () => {
   assert.match(runner, /worker-src 'self'/u);
   assert.doesNotMatch(runner, /appsforoffice|private\.example|unsafe-inline|'unsafe-eval'|blob:/u);
 });
+
+
+void test("enterprise CSP allows every approved origin but no unlisted provider", () => {
+  const csp = buildEnterpriseContentSecurityPolicy([
+    "https://private-a.example.invalid/v1",
+    "https://private-b.example.invalid/api",
+  ]);
+  assert.match(csp, /connect-src 'self' https:\/\/appsforoffice\.microsoft\.com https:\/\/private-a\.example\.invalid https:\/\/private-b\.example\.invalid/u);
+  assert.doesNotMatch(csp, /unknown\.example\.invalid|connect-src[^;]*\*/u);
+  assert.throws(() => buildEnterpriseContentSecurityPolicy([
+    "https://private-a.example.invalid/v1", "http://untrusted.example.invalid/api",
+  ]));
+});
