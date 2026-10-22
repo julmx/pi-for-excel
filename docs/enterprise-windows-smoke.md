@@ -66,6 +66,29 @@ example below is deliberately fictional:
 .\scripts\start-enterprise-local.ps1 -ApiBaseUrl "https://api.example.invalid/llm/v1"
 ```
 
+To authorize **multiple** corporate gateways, supply each approved API base URL
+when building (not just in the taskpane settings):
+
+```powershell
+.\scripts\start-enterprise-local.ps1 -ApiBaseUrls @(
+  "https://quality.example.invalid/v1",
+  "https://genx.example.invalid/api"
+)
+```
+
+Then configure both gateways in Settings, leaving Model ID empty for discovery,
+and open the **model selector**: it already lists models from every registered
+provider with their gateway names. A gateway stored in Settings but absent
+from `-ApiBaseUrls` remains visible as **Not approved** and its models are
+intentionally excluded. For a gateway change, stop the server, rebuild with
+the updated approved URL list, and restart Excel; editing Settings alone
+must never expand the network permissions.
+
+The existing singular `-ApiBaseUrl` option remains supported. If one of the
+approved APIs requires the optional same-origin relay for WebView2 CORS,
+`-UseLocalApiRelay` remains available and forwards each indexed approved API
+to its own pinned upstream. Use only approved test APIs and synthetic data.
+
 The script runs `npm ci`, compiles with
 `VITE_PI_ENTERPRISE_MODE=true`, creates the independent
 `manifest.enterprise.local.xml`, and serves the production files over
@@ -84,7 +107,7 @@ Notes:
   only to the local server for executable and image assets.
 - The client still loads `office.js` from Microsoft's Office CDN.
 - The local server sets a strict CSP and blocks connections to other origins,
-  except the approved API origin and the Office.js CDN where applicable.
+  except the explicitly approved API origins and the Office.js CDN where applicable.
   CSP compatibility must be validated in the installed Excel WebView.
 - No separately installed Python, tmux, MCP or external proxy server is needed.
   Enterprise Python runs through bundled Pyodide in an isolated-origin Worker.
