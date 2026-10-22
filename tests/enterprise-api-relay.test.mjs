@@ -45,3 +45,34 @@ void test("relay requires HTTPS upstream without embedded secrets", () => {
     assert.throws(() => resolveEnterpriseRelayTarget(invalid, "/__enterprise_api/models", "GET"));
   }
 });
+
+
+void test("relay indexes additional approved gateways without allowing destination injection", () => {
+  const urls = [
+    "https://private-a.example.invalid/v1",
+    "https://private-b.example.invalid/api",
+  ];
+  assert.equal(
+    resolveEnterpriseRelayTarget(urls, "/__enterprise_api/models", "GET")?.href,
+    "https://private-a.example.invalid/v1/models",
+  );
+  assert.equal(
+    resolveEnterpriseRelayTarget(urls, "/__enterprise_api/1/models", "GET")?.href,
+    "https://private-b.example.invalid/api/models",
+  );
+  assert.equal(
+    resolveEnterpriseRelayTarget(urls, "/__enterprise_api/1/chat/completions", "POST")?.href,
+    "https://private-b.example.invalid/api/chat/completions",
+  );
+  for (const path of [
+    "/__enterprise_api/0/models",
+    "/__enterprise_api/2/models",
+    "/__enterprise_api/999/models",
+    "/__enterprise_api/1/http://attacker.invalid",
+    "/__enterprise_api/1/models?url=https://attacker.invalid",
+    "/__enterprise_api/1/../models",
+  ]) {
+    assert.equal(resolveEnterpriseRelayTarget(urls, path, "GET"), null, path);
+  }
+  assert.equal(resolveEnterpriseRelayTarget(urls, "/__enterprise_api/1/models", "POST"), null);
+});
