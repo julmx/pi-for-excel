@@ -113,6 +113,17 @@ function createGatewayCard(args: {
   keyState.textContent = args.gateway.apiKey.length > 0 ? t("custom-gateway.gatewayApiKeyConfigured") : t("custom-gateway.gatewayApiKeyNone");
 
   card.append(topRow, endpoint, model, contextWindow, maxTokens, keyState);
+
+  const enterprisePolicy = readBuildEnterpriseModelPolicy();
+  if (enterprisePolicy) {
+    const approved = enterprisePolicy.baseUrls.includes(args.gateway.endpointUrl);
+    const availability = document.createElement("p");
+    availability.className = "pi-settings-gateway-item__meta";
+    availability.textContent = approved
+      ? t("custom-gateway.enterpriseApproved")
+      : t("custom-gateway.enterpriseNotApproved");
+    card.appendChild(availability);
+  }
   return card;
 }
 
