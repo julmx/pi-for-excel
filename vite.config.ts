@@ -239,6 +239,7 @@ export default defineConfig({
       "/oauth-proxy/github": proxyEntry("https://github.com", "/oauth-proxy/github"),
 
       // API proxies (providers that block browser CORS)
+      "/api-proxy/github": proxyEntry("https://api.github.com", "/api-proxy/github"),
       "/api-proxy/anthropic": proxyEntry("https://api.anthropic.com", "/api-proxy/anthropic"),
       "/api-proxy/openai-auth": proxyEntry("https://auth.openai.com", "/api-proxy/openai-auth"),
       "/api-proxy/openai": proxyEntry("https://api.openai.com", "/api-proxy/openai"),
@@ -248,6 +249,16 @@ export default defineConfig({
       "/api-proxy/google-cloudcode-sandbox": proxyEntry("https://daily-cloudcode-pa.sandbox.googleapis.com", "/api-proxy/google-cloudcode-sandbox"),
       "/api-proxy/google-cloudcode": proxyEntry("https://cloudcode-pa.googleapis.com", "/api-proxy/google-cloudcode"),
       "/api-proxy/google": proxyEntry("https://generativelanguage.googleapis.com", "/api-proxy/google"),
+
+      // pi.dev model catalogue relay; production uses the matching vercel.json rewrite.
+      "/model-catalog": {
+        target: "https://pi.dev",
+        changeOrigin: true,
+        rewrite: (p: string) =>
+          p.replace(/^\/model-catalog\/([0-9][0-9a-z.+-]*)\/([a-z0-9-]+)$/, "/api/models/providers/$2?types=chat&pi-version=$1"),
+        secure: true,
+        configure: stripBrowserHeaders,
+      },
     },
   },
 

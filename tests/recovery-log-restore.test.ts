@@ -31,7 +31,7 @@ void test("restore rejects legacy snapshots without workbook identity", async ()
   });
 
   const log = new WorkbookRecoveryLog({
-    getSettingsStore: () => Promise.resolve(settingsStore),
+    getStore: () => Promise.resolve(settingsStore.recovery),
     getWorkbookContext: (): Promise<WorkbookContext> => Promise.resolve({
       workbookId: "url_sha256:target",
       workbookName: "Target.xlsx",
@@ -67,7 +67,7 @@ void test("restore rejects when current workbook identity is unavailable", async
   });
 
   const log = new WorkbookRecoveryLog({
-    getSettingsStore: () => Promise.resolve(settingsStore),
+    getStore: () => Promise.resolve(settingsStore.recovery),
     getWorkbookContext: (): Promise<WorkbookContext> => Promise.resolve({
       workbookId: null,
       workbookName: null,
@@ -100,7 +100,7 @@ void test("restore applies checkpoint values and creates inverse checkpoint", as
   let appliedValues: unknown[][] = [];
 
   const log = new WorkbookRecoveryLog({
-    getSettingsStore: () => Promise.resolve(settingsStore),
+    getStore: () => Promise.resolve(settingsStore.recovery),
     getWorkbookContext: () => Promise.resolve(workbookContext),
     now: () => 1700000001000,
     createId,
@@ -205,7 +205,7 @@ void test("restore round-trips comment-thread states for present and absent thre
     let appliedState: RecoveryCommentThreadState | null = null;
 
     const log = new WorkbookRecoveryLog({
-      getSettingsStore: () => Promise.resolve(settingsStore),
+      getStore: () => Promise.resolve(settingsStore.recovery),
       getWorkbookContext: () => Promise.resolve(workbookContext),
       now: () => 1700000003200 + index,
       createId,
@@ -242,9 +242,8 @@ void test("restore round-trips comment-thread states for present and absent thre
     assert.equal(appliedAddress, address, `Expected apply address for ${scenario.name}.`);
     assert.deepEqual(appliedState, scenario.targetState, `Expected applied state for ${scenario.name}.`);
 
-    const snapshots = await log.listForCurrentWorkbook(10);
     const inverse = restored.inverseSnapshotId
-      ? findSnapshotById(snapshots, restored.inverseSnapshotId)
+      ? await log.read(restored.inverseSnapshotId)
       : null;
 
     assert.ok(inverse, `Expected inverse snapshot for ${scenario.name}.`);
@@ -255,5 +254,66 @@ void test("restore round-trips comment-thread states for present and absent thre
       scenario.currentState,
       `Expected inverse state for ${scenario.name}.`,
     );
+  }
+});
+
+void test("a restore that times out sends nothing more to Excel", async () => {
+  // Excel.run cannot be cancelled: when the call gives up (a timeout), the
+  // callback is still running. The restore's write must not reach Excel after
+  // the restore has already reported its failure.
+  let releaseLoad: (() => void) | undefined;
+  let syncsReachingExcel = 0;
+  let callback: Promise<unknown> | undefined;
+  const range = { values: [[1]], formulas: [[1]], load: () => undefined };
+  const sheet = { getRange: () => range };
+  const context = {
+    workbook: { worksheets: { getItem: () => sheet, getActiveWorksheet: () => sheet } },
+    sync: () => {
+      syncsReachingExcel += 1;
+      return syncsReachingExcel === 1
+        ? new Promise<void>((resolve) => { releaseLoad = resolve; })
+        : Promise.resolve();
+    },
+  };
+  const settingsStore = createInMemorySettingsStore();
+  const log = new WorkbookRecoveryLog({
+    getStore: () => Promise.resolve(settingsStore.recovery),
+    getWorkbookContext: () => Promise.resolve({
+      workbookId: "url_sha256:timeout",
+      workbookName: "Model.xlsx",
+      source: "document.url",
+    } satisfies WorkbookContext),
+  });
+  const appended = await log.append({
+    toolName: "write_cells",
+    toolCallId: "call-timeout",
+    address: "Sheet1!A1",
+    changedCount: 1,
+    beforeValues: [["before"]],
+    beforeFormulas: [["before"]],
+  });
+  assert.ok(appended);
+
+  const hadExcel = Reflect.has(globalThis, "Excel");
+  const previousExcel = Reflect.get(globalThis, "Excel");
+  Reflect.set(globalThis, "Excel", {
+    run: (fn: (host: typeof context) => Promise<unknown>) => {
+      callback = fn(context).catch((error: unknown) => error);
+      return Promise.reject(new Error("Timeout"));
+    },
+  });
+
+  try {
+
+    await assert.rejects(() => log.restore(appended.id), /Timeout/u);
+
+    // Excel answers the stuck load late; the callback goes on to its write.
+    releaseLoad?.();
+    const outcome = await callback;
+    assert.equal(syncsReachingExcel, 1);
+    assert.match(String(outcome), /abandoned/u);
+  } finally {
+    if (hadExcel) Reflect.set(globalThis, "Excel", previousExcel);
+    else Reflect.deleteProperty(globalThis, "Excel");
   }
 });

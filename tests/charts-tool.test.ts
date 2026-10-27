@@ -20,7 +20,6 @@ import type {
 } from "../src/workbook/recovery-states.ts";
 import {
   createInMemorySettingsStore,
-  findSnapshotById,
   withoutUndefined,
 } from "./fixtures/recovery-log.ts";
 
@@ -444,7 +443,7 @@ void test("chart update can be restored through workbook_history and records aud
   };
   let id = 0;
   const recovery = new WorkbookRecoveryLog({
-    getSettingsStore: () => Promise.resolve(settings),
+    getStore: () => Promise.resolve(settings.recovery),
     getWorkbookContext: () => Promise.resolve(workbookContext),
     now: () => 1_700_000_000_000 + id,
     createId: () => `chart-snapshot-${id += 1}`,
@@ -544,7 +543,7 @@ void test("workbook recovery log persists and restores chart checkpoints", async
   let appliedState: RecoveryChartState | null = null;
 
   const log = new WorkbookRecoveryLog({
-    getSettingsStore: () => Promise.resolve(settingsStore),
+    getStore: () => Promise.resolve(settingsStore.recovery),
     getWorkbookContext: () => Promise.resolve(workbookContext),
     now: () => 1700000000100,
     createId,
@@ -574,9 +573,8 @@ void test("workbook recovery log persists and restores chart checkpoints", async
   assert.equal(appliedAddress, "Sheet1!Sales");
   assert.deepEqual(withoutUndefined(appliedState), withoutUndefined(restoredState));
 
-  const snapshots = await log.listForCurrentWorkbook(10);
   const inverse = restored.inverseSnapshotId
-    ? findSnapshotById(snapshots, restored.inverseSnapshotId)
+    ? await log.read(restored.inverseSnapshotId)
     : null;
 
   assert.ok(inverse);
@@ -589,6 +587,8 @@ void test("workbook recovery log persists and restores chart checkpoints", async
 
 void test("chart_absent restore can skip inverse snapshot when recreation would be impossible", async () => {
   const settingsStore = createInMemorySettingsStore();
+  const ids: string[] = [];
+  const rangeRestores: string[] = [];
   const workbookContext: WorkbookContext = {
     workbookId: "url_sha256:charts-create-workbook",
     workbookName: "Charts.xlsx",
@@ -602,14 +602,29 @@ void test("chart_absent restore can skip inverse snapshot when recreation would 
   };
 
   const log = new WorkbookRecoveryLog({
-    getSettingsStore: () => Promise.resolve(settingsStore),
+    getStore: () => Promise.resolve(settingsStore.recovery),
     getWorkbookContext: () => Promise.resolve(workbookContext),
-    now: () => 1700000000200,
-    createId: () => "snap-create-chart",
-    applySnapshot: () => Promise.resolve({ values: [[1]], formulas: [[1]] }),
+    now: () => 1700000000200 + ids.length,
+    createId: () => {
+      const id = `snap-${ids.length + 1}`;
+      ids.push(id);
+      return id;
+    },
+    applySnapshot: (address) => {
+      rangeRestores.push(address);
+      return Promise.resolve({ values: [[1]], formulas: [[1]] });
+    },
     applyChartSnapshot: () => Promise.resolve({ state: null, address: "Sheet1!New Chart" }),
   });
 
+  await log.append({
+    toolName: "write_cells",
+    toolCallId: "tc-older-write",
+    address: "Sheet1!A1",
+    changedCount: 1,
+    beforeValues: [["before"]],
+    beforeFormulas: [["before"]],
+  });
   const appended = await log.appendChart({
     toolName: "charts",
     toolCallId: "tc-create-recovery",
@@ -619,8 +634,15 @@ void test("chart_absent restore can skip inverse snapshot when recreation would 
   });
 
   assert.ok(appended);
-  const restored = await log.restore(appended.id);
+  const restored = await log.restoreLatestForCurrentWorkbook();
+  assert.equal(restored.restoredSnapshotId, appended.id);
   assert.equal(restored.inverseSnapshotId, null);
+
+  // With no rollback to store, the used backup is removed, so the next
+  // /revert reaches the older write instead of re-deleting the chart forever.
+  const next = await log.restoreLatestForCurrentWorkbook();
+  assert.equal(next.address, "Sheet1!A1");
+  assert.deepEqual(rangeRestores, ["Sheet1!A1"]);
 });
 
 void test("chart rename restore round-trips through the inverse address", async () => {
@@ -727,4 +749,3 @@ void test("chart_absent restore with a missing id deletes nothing", async () => 
   assert.equal(survivor.deleted, false, "a different chart holding the name must not be deleted");
   assert.equal(sheet.charts.items.length, 1);
 });
-

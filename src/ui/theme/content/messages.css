@@ -10,6 +10,47 @@
   gap: 12px;
 }
 
+.pi-turn-changes {
+  margin: 0 12px 8px;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.pi-turn-changes[data-outcome="stopped"],
+.pi-turn-changes[data-outcome="failed"] {
+  border-left: 2px solid var(--pi-amber);
+  padding-left: 8px;
+  color: var(--foreground);
+}
+
+.pi-turn-changes button {
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pi-turn-changes__actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.pi-turn-changes[data-outcome="failed"] {
+  border-color: var(--destructive);
+}
+
+.pi-turn-changes button:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+  text-decoration: none;
+}
+
+.pi-turn-changes__warning {
+  display: block;
+}
+
 /* Streaming message wrapper */
 .pi-streaming-body {
   display: flex;
@@ -86,6 +127,32 @@ assistant-message { margin-right: var(--pill-inset); }
   padding-right: 12px;
 }
 
+.pi-answer-copy {
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 4px 8px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.pi-answer-copy:hover,
+.pi-answer-copy:focus-visible {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+.pi-answer-copy--message {
+  margin: 6px 12px;
+}
+
+@media (hover: hover) {
+  assistant-message:not(:hover):not(:focus-within) .pi-answer-copy--message {
+    opacity: 0;
+  }
+}
+
 /* Assistant error row */
 .pi-assistant-error {
   margin: 12px 16px 0;
@@ -154,4 +221,16 @@ markdown-block h6:first-child {
    sidebar-rendered rows). Replaces the old Tailwind px-4. */
 .pi-message-gutter {
   padding-inline: 16px;
+}
+
+.pi-subscription-warning {
+  margin: 12px 16px;
+  padding: 12px;
+  border: 1px solid var(--amber-alpha-30);
+  border-radius: var(--radius-md);
+  background: var(--amber-alpha-8);
+  color: var(--pi-amber-text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }

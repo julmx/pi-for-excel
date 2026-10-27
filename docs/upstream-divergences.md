@@ -14,28 +14,24 @@ don't accumulate silently.
 
 ---
 
-## 1. Mid-session model switching (fork vs in-place)
+## 1. Mid-session model switching (in-place)
 
 | | pi-mono | Pi for Excel (current) |
 |---|---|---|
 | Empty session | Switch in place | Switch in place |
 | Non-empty session (default) | Switch in place | Switch in place |
-| Non-empty session (opt-in) | N/A | Fork to a new tab with the new model |
 
-**Rationale:** When you switch models mid-conversation, the API provider's
-cached prefix becomes invalid (different model = different cache key). Forking
-can preserve the original tab's cache if the user switches back, but forcing
-fork by default is surprising UX for many users.
+**Rationale:** Switching is always in place, matching pi-mono. Duplicate tab
+is the explicit way to make a copy. Choices made while busy apply to the next
+run, just like thinking; Agent captures both settings once per run.
 
-**Status:** #428 introduced fork-on-non-empty. #442 changed default back to
-pi-mono parity (in-place), and kept fork as an advanced opt-in setting.
+**Status:** CL-11 removes the former opt-in fork setting. The old
+`model.switch.behavior.v1` key is ignored, including persisted `fork` values.
 
 - **Default:** in-place switch (parity)
-- **Option:** fork to new tab for non-empty sessions
 
-**Files:** `src/models/switch-behavior.ts`, `src/taskpane/init.ts`
-(`applyModelSelection`, `cloneRuntimeToNewTab`),
-`src/commands/builtins/settings-overlay.ts`
+**Files:** `src/taskpane/session-runtime-manager.ts`, `src/taskpane/init.ts`
+(`applyModelSelection`, `cloneRuntimeToNewTab`).
 
 ---
 
@@ -155,6 +151,7 @@ worst-case tool-loop context proportional to the model's actual capacity (#566).
 | Credentials | filesystem-backed auth storage and provider OAuth | existing IndexedDB key/OAuth stores, adapted to Pi AI's credential contract |
 | Dynamic catalogues | coding-agent models store | IndexedDB `model-catalogs` store |
 | Provider plugins | trusted coding-agent extensions can register full providers | extensions register declarative providers; host owns credentials, known stream implementations and URL policy |
+| Built-in catalogue updates | `withRemoteCatalog()` fetches pi.dev directly, refreshes after 4 h, all model types; OpenRouter personalised per key | ported overlay fetches through a same-origin relay (`/model-catalog/<version>/<provider>`, no CORS on pi.dev) on every network refresh (startup, picker open); chat models only; entries must reuse a bundled (API, base URL) route and its headers; OpenRouter gets the plain overlay |
 
 **Rationale:** Pi AI 0.80 removed the legacy global registry/dispatch API. The
 coding-agent `ModelRuntime` is not suitable for an Office WebView because it
@@ -172,6 +169,7 @@ discovered and extension-owned providers all flow through one injected
 the direct browser-safe API subpath.
 
 **Files:** `src/models/browser-model-runtime.ts`,
+`src/models/remote-model-catalog.ts`,
 `src/storage/local/model-catalogs-store.ts`,
 `src/storage/local/provider-credentials-store.ts`,
 `src/auth/stream-proxy.ts`, `src/compat/bedrock-provider-stub.ts`

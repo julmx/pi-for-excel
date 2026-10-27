@@ -1,63 +1,56 @@
 # Model / dependency update playbook
 
-**Last verified:** 2026-09-08
+New models reach users without a release. Pi for Excel ships a pinned, tested Pi runtime
+(`@earendil-works/pi-ai`, `@earendil-works/pi-agent-core`) and refreshes the model catalogue
+from pi.dev at runtime, the way `pi update --models` does in the Pi CLI. Upgrade the runtime
+only when you want its code changes (new transports, streaming, auth or agent fixes).
 
-This repo hardcodes a small set of "featured" and "preferred" model patterns for sorting and default selection. Static built-in models come from Pi AI, while custom and extension providers can add cached, dynamically discovered catalogues at runtime.
-
-This doc describes how to update:
-- the **Pi dependency versions** we ship (`@earendil-works/pi-ai`, `@earendil-works/pi-agent-core`)
+This doc covers:
+- how the model catalogue stays current
+- upgrading the **Pi dependency versions** we ship
 - the **model ordering/default-selection behavior** in the add-in (`src/models/model-ordering.ts`, `src/models/featured-models.ts`, `src/taskpane/default-model.ts`)
 - the **thinking-level UI** that reflects registry capabilities (`src/models/thinking-levels.ts`, `src/taskpane/thinking-display.ts`)
-- the browser-native runtime and dynamic catalogue path (`src/models/browser-model-runtime.ts`, `src/storage/local/model-catalogs-store.ts`)
 
-## Sources of truth
+## How the model catalogue stays current
 
-- **Built-in model IDs:** `node_modules/@earendil-works/pi-ai/dist/providers/data/*.json`, aggregated by `dist/models.generated.js` and exposed through `builtinProviders()`.
-- **Runtime lookup and streaming:** the taskpane-owned `BrowserModelRuntime`, backed by Pi AI's `createModels()` collection.
+```
+earendil-works/pi ──publish──▶ pi.dev ──/model-catalog/<version>/<provider>──▶ add-in ──▶ IndexedDB
+ (catalogue workflow)                  (vercel.json rewrite,                     (validated overlay
+                                        30 min edge cache)                        on bundled models)
+```
+
+- **Bundled models:** `node_modules/@earendil-works/pi-ai/dist/providers/data/*.json`, exposed through `builtinProviders()`. They are the fallback when there is no network, no relay or no newer catalogue.
+- **Catalogue overlay:** `withRemoteCatalog()` (`src/models/remote-model-catalog.ts`) wraps each built-in provider, ported from Pi coding-agent's `remote-catalog-provider.ts`. It fetches `/model-catalog/<pi-ai version>/<provider>` on the add-in's own origin. `vercel.json` rewrites that to `https://pi.dev/api/models/providers/<provider>?types=chat&pi-version=<version>` (pi.dev serves the newest catalogue that version supports) with `CDN-Cache-Control: max-age=1800`; the Vite dev server proxies the same path.
+- **When it refreshes:** whenever `ModelRefreshOwner` refreshes with network access: startup, opening the model picker, and connection or extension-provider changes. Only providers with configured credentials are fetched. Cached overlays are restored offline at startup. Requests revalidate with the stored ETag.
+- **What remote data can change:** model IDs and descriptive metadata (name, limits, cost, reasoning, thinking levels, input types, prompt cache, compat). An entry must use an API and base URL that the bundled provider already uses, and it takes that provider's headers, so the catalogue cannot add a transport this runtime cannot stream or send credentials to a new host. Malformed entries are dropped.
+- **Fail-safe:** a 404 (self-hosted without the relay), a failed request, a catalogue older than the bundled data, or a `x-pi-model-catalog-minimum-version` above the installed `pi-ai` leaves the last published list in place. The selected model is never switched; an idle session picks up changed metadata for its current model.
+- **Self-hosting:** forward `/model-catalog/<version>/<provider>` the same way to get updates, for example with nginx:
+
+  ```nginx
+  location ~ ^/model-catalog/([0-9][0-9a-z.+-]*)/([a-z0-9-]+)$ {
+    proxy_pass https://pi.dev/api/models/providers/$2?types=chat&pi-version=$1;
+  }
+  ```
+
+  Without it, the add-in uses the models bundled with its `pi-ai` version.
+
+Custom gateways and extension providers keep their own discovery:
+
 - **Dynamic catalogue cache:** IndexedDB store `model-catalogs`, accessed through `ModelCatalogsStore`; restored entries are rebound to the provider's current API/base URL before use.
 - **Discovery bounds:** responses are limited to 2 MiB, 2,000 entries and 256 characters per model ID. An invalid/oversized refresh leaves the last safe cache and configured baseline intact.
 - **Manual gateways:** models remain in `CustomProvidersStore` and register through the same collection without `/models` discovery. An exact endpoint, model ID and API match supplies metadata from the shared registry; an explicit context limit takes precedence. Unknown models retain the existing defaults. Previously discovered additions are no longer loaded for manual-form entries.
 - **Extension providers:** `api.models.registerProvider()` declarations are runtime-owned and unload with their extension. Unregistering aborts in-flight discovery before deleting its cache so late responses cannot resurrect stale entries.
 
-Do not use Pi coding-agent's Node/file `ModelRuntime` directly in the Office WebView. Pi for Excel uses the same Pi AI provider primitives with browser storage, OAuth and proxy policy. Cross-check the installed Pi package and changelog when the generated registry changes. Never infer aliases or metadata from marketing names.
+Do not use Pi coding-agent's Node/file `ModelRuntime` directly in the Office WebView. Pi for Excel uses the same Pi AI provider primitives with browser storage, OAuth and proxy policy. Never infer aliases or metadata from marketing names.
 
 Manual gateway metadata is a save-time snapshot. Existing entries retain saved limits until edited; clear the context field when re-saving to use current registry defaults. Other manual gateway snapshots are excluded from metadata lookup.
 
-### Current GPT-5.6 registry snapshot (`pi-ai` 0.87.0)
+## Runtime upgrades
 
-Upstream exposes exactly three IDs on both `openai` and `openai-codex`; there is deliberately no bare `gpt-5.6` alias:
-
-| ID | Provider | Standard input / output | Cache read / write | Above 272k input / output | Above 272k cache read / write |
-|---|---|---:|---:|---:|---:|
-| `gpt-5.6-sol` | OpenAI API | $4 / $20 | $0.40 / $5 | $8 / $30 | $0.80 / $10 |
-| `gpt-5.6-sol` | ChatGPT | $5 / $30 | $0.50 / $6.25 | $10 / $45 | $1 / $12.50 |
-| `gpt-5.6-terra` | Both | $2 / $12 | $0.20 / $2.50 | $4 / $18 | $0.40 / $5 |
-| `gpt-5.6-luna` | Both | $0.20 / $1.20 | $0.02 / $0.25 | $0.40 / $1.80 | $0.04 / $0.50 |
-
-Prices are registry values in USD per million tokens. All three models:
-
-- accept text and image input, support reasoning, and have a 128,000-token maximum output
-- use a 272,000-token context window through both the OpenAI API (`openai-responses`, `https://api.openai.com/v1`) and ChatGPT (`openai-codex-responses`, `https://chatgpt.com/backend-api`)
-- preserve distinct native `xhigh` and `max` efforts
-- expose `off`, `low`, `medium`, `high`, `xhigh`, and `max` through the OpenAI API; `minimal` is explicitly unavailable
-- expose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` through ChatGPT, with the add-in's `minimal` level mapped to upstream `low`
-
-`tests/model-ordering.test.ts` pins this metadata so a future registry change is reviewed rather than silently changing the UI/runtime contract.
-
-## When to run this
-
-- If you want to add newly-released models and they’re missing from our add-in.
-- **If it’s been > 1 week since the last verification date above**, refresh deps + re-check model IDs.
-
-## What is now automated
-
-- Dependabot checks npm dependencies **daily**.
-- A dedicated Dependabot group (`pi-stack`) keeps these packages in one PR:
-  - `@earendil-works/pi-ai`
-  - `@earendil-works/pi-agent-core`
-- `.github/workflows/dependabot-pi-automerge.yml` auto-approves + enables auto-merge for that Dependabot group (merge still waits for green checks).
+- Dependabot checks npm dependencies **daily**. The `pi-stack` group keeps `@earendil-works/pi-ai` and `@earendil-works/pi-agent-core` in one PR. Review and merge it by hand after an Excel smoke test; it is no longer needed for new models.
 - `npm run check` includes `scripts/check-pi-deps-lockstep.mjs`, which enforces the dependency policy below (`pi-ai` === `pi-agent-core`, exact pins, single shared `pi-ai` copy in the lockfile, `typebox` pinned to the version `pi-ai` depends on).
 - Dependabot ignores `typebox`: it is bumped by hand as part of a pi-stack bump, to whatever `npm view @earendil-works/pi-ai@<version> dependencies.typebox` says. A Dependabot PR that bumps `typebox` on its own fails the lockstep check by design.
+- Upgrade when a model needs a transport (`api`) the add-in does not have yet; the catalogue drops such entries until then.
 
 ## Step-by-step
 
@@ -111,10 +104,7 @@ node --input-type=module -e 'import { builtinModels } from "@earendil-works/pi-a
 npm run test:models
 ```
 
-If an ID doesn’t appear there, **don’t** add it to the add-in yet—either:
-- bump `@earendil-works/pi-ai` further, or
-- use an older/fallback ID, or
-- configure a custom gateway baseline model in Pi for Excel.
+These checks cover the bundled fallback. Models published to pi.dev after this `pi-ai` release arrive through the catalogue overlay instead.
 
 ### 5) Update model ordering + default selection logic (avoid hardcoding exact IDs)
 
@@ -125,7 +115,7 @@ Files:
 - `src/models/thinking-levels.ts` (registry-driven thinking capabilities)
 - `src/taskpane/thinking-display.ts` (localized thinking labels/hints/colors)
 - `src/ui/model-selector-dialog.ts` (first-party model picker UI)
-- `tests/model-ordering.test.ts` (metadata + behavior regressions; run `npm run test:models` — requires Node 22.19+)
+- `tests/model-ordering.test.ts` (selection and thinking-control regressions; run `npm run test:models` — requires Node 22.19+)
 
 We intentionally avoid pinning exact versioned IDs now. Instead we:
 
@@ -139,9 +129,9 @@ We intentionally avoid pinning exact versioned IDs now. Instead we:
     - This is picker ordering only; default selection currently skips Fable because it is in the registry but unavailable for normal Anthropic use.
     - Version compare uses `parseMajorMinor()` where `claude-opus-4-6` → `46`, `claude-opus-4-7` → `47`, `claude-fable-5` → `50`.
     - Important: IDs like `claude-opus-4-20250514` are treated as **major only** (`40`) and the `YYYYMMDD` part is considered a separate date suffix by `modelRecencyScore()`.
-  - **OpenAI (`openai` + `openai-codex`):** latest general `gpt-5.x` *if* its version >= latest `gpt-5.x-codex`, then latest Codex
-    - GPT-5.6 has three explicit tiers and no bare alias. Same-version ordering is `gpt-5.6-sol` → `gpt-5.6-terra` → `gpt-5.6-luna`.
-    - `gpt-5.6-sol` scores as `56`; `gpt-5.5` scores as `55`; `gpt-5.3-codex` scores as `53`.
+  - **OpenAI (`openai` + `openai-codex`):** latest general GPT (`gpt-5.x`, `gpt-6.x`, and later majors) *if* its version >= latest Codex, then latest Codex
+    - GPT-5.6 and GPT-6 have named tiers and no bare alias. Same-version tier order is Sol, Astra, Terra, Luna, so GPT-5.6 orders as `gpt-5.6-sol` → `gpt-5.6-terra` → `gpt-5.6-luna`.
+    - `gpt-6.1-sol` scores as `61`; `gpt-6-sol` scores as `60`; `gpt-5.6-sol` scores as `56`; `gpt-5.5` scores as `55`; `gpt-5.3-codex` scores as `53`.
     - Major-only GPT-5 IDs are also handled (`gpt-5`, `gpt-5-pro`, `gpt-5-codex`).
     - Where a plain ID exists, it beats same-version suffixed variants (`gpt-5.5` before `gpt-5.5-pro`, `gpt-5` before `gpt-5-pro`).
   - **Google (API key):** latest `gemini-*-pro*` (regex: `/^gemini-.*-pro/i`)
@@ -150,7 +140,7 @@ We intentionally avoid pinning exact versioned IDs now. Instead we:
   The ordering logic is driven by:
   - `providerPriority()` (Anthropic → OpenAI Codex → OpenAI → Google → …)
   - `familyPriority()` / `openAiFamilyPriority()` (Opus/Sonnet/Haiku, GPT vs Codex, etc.)
-  - `openAiVariantPriority()` (explicit same-version GPT-5.6 tier order)
+  - `openAiVariantPriority()` (explicit same-version GPT tier order)
   - `parseMajorMinor()` + `modelRecencyScore()` (treats `4-6` / `4.6` as `46`, `5.6` as `56`, keeps embedded date suffixes such as `YYYYMMDD` separate, and ignores later date-like suffixes such as `gpt-4o-2024-11-20` or `gemini-2.5-pro-preview-06-05` when extracting the family version)
   - `compareModels()` (provider + family + recency tie-breaks; deterministic sorting)
 
@@ -158,8 +148,8 @@ We intentionally avoid pinning exact versioned IDs now. Instead we:
 
 - Pick the default model via provider-aware rules:
   - Anthropic is a small special-case: latest Opus by default while Fable is in the registry but unavailable; Sonnet and Fable remain fallbacks if Opus is absent.
-  - OpenAI (`openai` + `openai-codex`) prefers the newest general GPT-5 when it is at least as new as Codex, with Codex as fallback; current GPT-5.6 default is Sol
-  - otherwise `DEFAULT_MODEL_RULES` + `pickLatestMatchingModel()` (uses the injected `Models` runtime to find the newest available ID)
+  - OpenAI (`openai` + `openai-codex`) prefers the newest general GPT when it is at least as new as Codex, with Codex as fallback; the current default is GPT-6.1 Sol
+  - otherwise `DEFAULT_MODEL_RULES` filters and sorts the injected `Models` catalogue by recency
 
 - Populate thinking controls from `getSupportedThinkingLevels()` instead of provider-specific hardcoded lists. This keeps model-level maps authoritative and ensures `xhigh` and `max` remain distinct.
 
@@ -211,7 +201,7 @@ npm run sideload
 #### “I updated models but they don’t show up” checklist
 
 1) **Provider filter:** the model picker only shows models for connected providers (saved API key/OAuth, keyless configured custom providers, or connected extension providers).
-2) **Catalogue:** manual-form gateways expose only configured models. Other discovery-enabled registrations request `<baseUrl>/models` and retain their baseline when discovery fails.
+2) **Catalogue:** built-in providers add pi.dev models on startup and when the picker opens; check the console for `[models]` warnings and the `/model-catalog/<version>/<provider>` request. Manual-form gateways expose only configured models. Other discovery-enabled registrations request `<baseUrl>/models` and retain their baseline when discovery fails.
 3) **Excel caching:** quit Excel completely (Cmd+Q) and reopen.
 4) **Hot reload note:** taskpane JS/CSS is served from Vite; edits to model-selection files (`src/models/model-ordering.ts`, `src/models/featured-models.ts`, `src/taskpane/default-model.ts`) should apply via HMR without needing to re-sideload, as long as Excel is pointed at the same running dev server.
 5) **Vite optimized deps:** after dependency bumps, clear and restart:
@@ -220,7 +210,3 @@ npm run sideload
 rm -rf node_modules/.vite
 npm run dev
 ```
-
-### 7) Update this doc’s date
-
-Bump `Last verified:` at the top to today’s date when you finish.

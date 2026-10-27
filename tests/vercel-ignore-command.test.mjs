@@ -12,7 +12,7 @@ function isVercelIgnoreCommandTestPayloadShape(value) {
   return typeof value === "object" && value !== null;
 }
 
-async function readIgnoreCommand() {
+async function readVercelConfig() {
   const raw = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
   const parsed = JSON.parse(raw);
 
@@ -20,12 +20,23 @@ async function readIgnoreCommand() {
     throw new Error("vercel.json is missing a string ignoreCommand");
   }
 
-  return parsed.ignoreCommand;
+  return parsed;
 }
 
 test("vercel.json wires ignoreCommand to the deploy policy script", async () => {
-  const ignoreCommand = await readIgnoreCommand();
-  assert.equal(ignoreCommand, EXPECTED_IGNORE_COMMAND);
+  const config = await readVercelConfig();
+  assert.equal(config.ignoreCommand, EXPECTED_IGNORE_COMMAND);
+});
+
+test("only main creates automatic deployments", async () => {
+  const config = await readVercelConfig();
+  // "**" matches branch names with slashes; Vercel deploys when any matching rule is true.
+  assert.deepEqual(config.git, {
+    deploymentEnabled: {
+      "**": false,
+      main: true,
+    },
+  });
 });
 
 test("deployment policy maps each Vercel context to deploy or skip", () => {

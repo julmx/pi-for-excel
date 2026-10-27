@@ -44,7 +44,8 @@ void test("enterprise instructions supersede stale Python guidance without losin
   assert.match(prompt, /Always use Python for this workbook/u);
   assert.match(prompt, /restricted tool\s+availability below takes precedence/iu);
   assert.match(prompt, /Current mode: \*\*Confirm\*\*/u);
-  assert.match(prompt, /Ask for explicit user confirmation before mutating workbook tools/iu);
+  assert.match(prompt, /tool approval dialog is the confirmation/iu);
+  assert.match(prompt, /do not ask again in chat before calling a mutating tool/iu);
 });
 
 void test("ordinary builds retain their existing richer tool documentation", () => {

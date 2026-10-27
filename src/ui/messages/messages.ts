@@ -24,10 +24,20 @@ import { html, LitElement, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 
 import { t } from "../../language/index.js";
+import { turnFailureFix } from "../../taskpane/turn-error.js";
+import { copyText } from "../copy-text.js";
+import { showToast } from "../toast.js";
+import { markdownText } from "./markdown-block.js";
 import type { UserMessageWithAttachments } from "../../messages/attachments.js";
-import { renderTool } from "./tool-renderer-registry.js";
+import { getToolRenderer, renderTool } from "./tool-renderer-registry.js";
+import {
+  getThinkingDurationMs,
+  isDisclosureExpanded,
+  setDisclosureExpanded,
+  subscribeDisclosure,
+  thinkingKey,
+} from "./transcript-state.js";
 import "./attachment-tile.js";
-import "./markdown-block.js";
 import "./thinking-block.js";
 
 @customElement("user-message")
@@ -76,6 +86,23 @@ export class UserMessage extends LitElement {
   }
 }
 
+interface RenderItem {
+  template: TemplateResult;
+  group?: ToolCall;
+}
+
+const TOOL_GROUP_LABEL_KEYS: Record<string, string> = {
+  fill_formula: "tool-group.fill_formula",
+  write_cells: "tool-group.write_cells",
+  read_range: "tool-group.read_range",
+  format_cells: "tool-group.format_cells",
+  conditional_format: "tool-group.conditional_format",
+  view_settings: "tool-group.view_settings",
+  charts: "tool-group.charts",
+  execute_office_js: "tool-group.script",
+  execute_wps_js: "tool-group.script",
+};
+
 @customElement("assistant-message")
 export class AssistantMessage extends LitElement {
   @property({ type: Object }) message?: AssistantMessageType;
@@ -84,7 +111,16 @@ export class AssistantMessage extends LitElement {
   @property({ type: Boolean }) hideToolCalls = false;
   @property({ type: Object }) toolResultsById?: Map<string, ToolResultMessage>;
   @property({ type: Boolean }) isStreaming = false;
-  @property({ type: Boolean }) hidePendingToolCalls = false;
+  @property({ type: String }) errorSummary: string | null = null;
+  @property({ type: Boolean }) canRetry = false;
+  @property({ type: Boolean }) hideError = false;
+  /**
+   * The turn is still running, so a tool call without a result is about to
+   * run or is running even before pi-agent-core marks it pending.
+   */
+  @property({ type: Boolean }) awaitingToolResults = false;
+
+  private _unsubscribe: (() => void) | undefined;
 
   protected override createRenderRoot(): HTMLElement | DocumentFragment {
     return this;
@@ -93,57 +129,130 @@ export class AssistantMessage extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.style.display = "block";
+    // Group open/closed state lives in transcript state.
+    this._unsubscribe = subscribeDisclosure(() => this.requestUpdate());
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._unsubscribe?.();
+    this._unsubscribe = undefined;
   }
 
   override render() {
     const message = this.message;
     if (!message) return html``;
 
-    // Render content in the order it appears.
-    const orderedParts: TemplateResult[] = [];
-    for (const chunk of message.content) {
+    // Render content in the order it appears. Only the last block of a
+    // streaming response can still be growing, so a thinking block reads
+    // "Thinking…" only until the model moves on to text or a tool call.
+    const lastIndex = message.content.length - 1;
+    const items: RenderItem[] = [];
+    for (const [index, chunk] of message.content.entries()) {
       if (chunk.type === "text" && chunk.text.trim() !== "") {
-        orderedParts.push(html`<markdown-block .content=${chunk.text}></markdown-block>`);
+        items.push({ template: html`<markdown-block .content=${chunk.text} .answer=${!this.isStreaming}></markdown-block>` });
       } else if (chunk.type === "thinking" && chunk.thinking.trim() !== "") {
-        orderedParts.push(
-          html`<thinking-block .content=${chunk.thinking} .isStreaming=${this.isStreaming}></thinking-block>`,
-        );
+        const key = thinkingKey(message, index);
+        items.push({ template: html`
+          <thinking-block
+            .content=${chunk.thinking}
+            .isStreaming=${this.isStreaming && index === lastIndex}
+            .disclosureKey=${key}
+            .durationMs=${getThinkingDurationMs(key)}
+          ></thinking-block>
+        ` });
       } else if (chunk.type === "toolCall") {
         if (this.hideToolCalls) continue;
 
         const tool = this.tools?.find((candidate) => candidate.name === chunk.name);
-        const pending = this.pendingToolCalls?.has(chunk.id) ?? false;
         const result = this.toolResultsById?.get(chunk.id);
-
-        // Skip pending tool calls when hidePendingToolCalls is set (prevents
-        // duplication while <streaming-message-container> is showing them).
-        if (this.hidePendingToolCalls && pending && !result) {
-          continue;
-        }
+        const pending = !result && (
+          (this.pendingToolCalls?.has(chunk.id) ?? false)
+          || (this.awaitingToolResults && message.stopReason === "toolUse")
+        );
 
         // Aborted turn with no result for this call → render as aborted.
         const aborted = message.stopReason === "aborted" && !result;
+        const finished = result ? !result.isError : !aborted && !pending && !this.isStreaming;
 
-        orderedParts.push(html`
-          <tool-message
-            .tool=${tool}
-            .toolCall=${chunk}
-            .result=${result}
-            .pending=${pending}
-            .aborted=${aborted}
-            .isStreaming=${this.isStreaming}
-          ></tool-message>
-        `);
+        items.push({
+          // Only finished calls with a tool card join a group; a running or
+          // failed call (or a fallback JSON render) breaks the run.
+          ...(finished && getToolRenderer(chunk.name) ? { group: chunk } : {}),
+          template: html`
+            <tool-message
+              .tool=${tool}
+              .toolCall=${chunk}
+              .result=${result}
+              .pending=${pending}
+              .aborted=${aborted}
+              .isStreaming=${this.isStreaming}
+              .disclosureKey=${`tool:${message.timestamp}:${chunk.id}`}
+            ></tool-message>
+          `,
+        });
       }
+    }
+
+    // Keep groups in Lit's render tree: moving its nodes after rendering
+    // breaks part ownership when switching tabs or finishing a tool.
+    const orderedParts: TemplateResult[] = [];
+    let end = 0;
+    for (const [index, item] of items.entries()) {
+      if (index < end) continue;
+      const leader = item.group;
+      end = index + 1;
+      if (leader) {
+        while (items[end]?.group?.name === leader.name) end++;
+      }
+      const count = end - index;
+      if (!leader || count < 2) {
+        orderedParts.push(item.template);
+        continue;
+      }
+
+      const key = `group:${message.timestamp}:${leader.id}`;
+      const expanded = isDisclosureExpanded(key, count < 3);
+      const labelKey = TOOL_GROUP_LABEL_KEYS[leader.name];
+      orderedParts.push(html`
+        <div class=${expanded ? "pi-tool-group" : "pi-tool-group pi-tool-group--collapsed"}>
+          <button
+            type="button"
+            class="pi-tool-group__header"
+            aria-expanded=${expanded ? "true" : "false"}
+            @click=${() => setDisclosureExpanded(key, !expanded)}
+          >
+            <span class="pi-tool-group__chevron">▸</span>
+            <span class="pi-tool-group__label">${labelKey
+              ? t(labelKey, { count })
+              : t("tool-group.other", { count, tool: leader.name })}</span>
+          </button>
+          ${items.slice(index, end).map((member) => member.template)}
+        </div>
+      `);
     }
 
     return html`
       <div>
         ${orderedParts.length ? html`<div class="pi-assistant-body">${orderedParts}</div>` : nothing}
-        ${message.stopReason === "error" && message.errorMessage
+        ${!this.isStreaming && message.content.some((chunk) => chunk.type === "text" && chunk.text.trim())
+          ? html`<button type="button" class="pi-answer-copy pi-answer-copy--message" @click=${() => {
+              const text = Array.from(this.querySelectorAll(".pi-assistant-body > markdown-block"),
+                (block) => markdownText(block).trim()).join("\n\n");
+              void copyText(text).then((outcome) => {
+                if (outcome === "copied") showToast(t("code-block.copied"));
+              });
+            }}>${t("messages.copyAnswer")}</button>`
+          : nothing}
+        ${message.stopReason === "error" && !this.hideError
           ? html`
-              <div class="pi-assistant-error">
-                <strong>${t("messages.errorLabel")}</strong> ${message.errorMessage}
+              <div class="pi-assistant-error" role="alert">
+                <p>${this.errorSummary || t("turn.error.generic")}</p>
+                ${this.canRetry ? html`
+                  <button type="button" class="pi-overlay-btn" @click=${() => this.dispatchEvent(new CustomEvent("pi-retry", { bubbles: true }))}>${t("turn.retry")}</button>
+                  <button type="button" class="pi-overlay-btn" @click=${() => this.dispatchEvent(new CustomEvent("pi-fix-error", { bubbles: true, detail: turnFailureFix(message.errorMessage ?? "").command }))}>${turnFailureFix(message.errorMessage ?? "").label}</button>
+                ` : nothing}
+                <details><summary>${t("turn.error.details")}</summary><pre>${message.errorMessage}</pre></details>
               </div>
             `
           : nothing}
@@ -163,14 +272,25 @@ export class ToolMessage extends LitElement {
   @property({ type: Boolean }) pending = false;
   @property({ type: Boolean }) aborted = false;
   @property({ type: Boolean }) isStreaming = false;
+  @property() disclosureKey = "";
+
+  private _unsubscribe: (() => void) | undefined;
 
   protected override createRenderRoot(): HTMLElement | DocumentFragment {
     return this;
   }
 
+  // No inline display style: theme CSS sets `display: block`, so a collapsed
+  // tool group can still hide its members.
   override connectedCallback(): void {
     super.connectedCallback();
-    this.style.display = "block";
+    this._unsubscribe = subscribeDisclosure(() => this.requestUpdate());
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._unsubscribe?.();
+    this._unsubscribe = undefined;
   }
 
   override render() {
@@ -191,11 +311,14 @@ export class ToolMessage extends LitElement {
         }
       : this.result;
 
+    const key = this.disclosureKey;
+    const expanded = isDisclosureExpanded(key);
     const renderResult = renderTool(
       toolName,
       toolCall.arguments,
       result,
       !this.aborted && (this.isStreaming || this.pending),
+      { expanded, toggle: () => setDisclosureExpanded(key, !expanded) },
     );
 
     // Custom renderers own their full card; fallback renders get a wrapper.

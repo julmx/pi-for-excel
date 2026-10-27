@@ -1,14 +1,16 @@
 /**
  * Settings root page — grouped navigation plus the handful of inline
- * behavior settings (execution mode, model-switch fork, language).
+ * behavior settings (execution mode, language).
  */
 
 import { getAppStorage } from "../../../storage/local/app-storage.js";
+import { SUBSCRIPTION_WARNING_SETTING } from "../../../taskpane/subscription-warning.js";
+import { getUserRules, getWorkbookRules } from "../../../rules/store.js";
+import { getWorkbookContext } from "../../../workbook/context.js";
 
 import { listOpenAiGatewayConfigs } from "../../../auth/custom-gateways.js";
 import { PI_EXECUTION_MODE_CHANGED_EVENT, type ExecutionMode } from "../../../execution/mode.js";
-import type { ModelSwitchBehavior } from "../../../models/switch-behavior.js";
-import { getLanguage, initLanguage, t } from "../../../language/index.js";
+import { getLanguage, t } from "../../../language/index.js";
 import {
   Archive,
   FlaskConical,
@@ -29,7 +31,9 @@ import {
   createSettingToggleRow,
 } from "../../../ui/settings-rows.js";
 import type { SettingsPageContext, SettingsShellPage } from "../../../ui/settings-shell.js";
+import { requestConfirmationDialog } from "../../../ui/confirm-dialog.js";
 import { showToast } from "../../../ui/toast.js";
+import { getThemeMode, setThemeMode } from "../../../ui/theme-mode.js";
 import { getSettingsPagesDependencies } from "./dependencies.js";
 
 function isRootPagePayloadShape(value: unknown): value is Record<string, unknown> {
@@ -151,41 +155,6 @@ function buildBehaviorGroup(ctx: SettingsPageContext): HTMLElement {
     });
   }
 
-  // ── Fork model switch ──
-  const forkToggle = createSettingToggleRow({
-    label: t("settings.section.advanced.fork_label"),
-    sublabel: t("settings.section.advanced.fork_sublabel"),
-  });
-
-  const getModelSwitchBehavior = deps.getModelSwitchBehavior;
-  const setModelSwitchBehavior = deps.setModelSwitchBehavior;
-
-  if (!getModelSwitchBehavior || !setModelSwitchBehavior) {
-    forkToggle.input.disabled = true;
-  } else {
-    let currentBehavior = getModelSwitchBehavior();
-    forkToggle.input.checked = currentBehavior === "fork";
-
-    forkToggle.input.addEventListener("change", () => {
-      const nextBehavior: ModelSwitchBehavior = forkToggle.input.checked ? "fork" : "inPlace";
-      if (nextBehavior === currentBehavior) return;
-
-      forkToggle.input.disabled = true;
-      void setModelSwitchBehavior(nextBehavior).then(
-        () => {
-          currentBehavior = nextBehavior;
-          showToast(nextBehavior === "fork" ? t("settings.toast.fork_on") : t("settings.toast.fork_off"));
-        },
-        () => {
-          forkToggle.input.checked = currentBehavior === "fork";
-          showToast(t("settings.toast.fork_failed"));
-        },
-      ).finally(() => {
-        forkToggle.input.disabled = false;
-      });
-    });
-  }
-
   // ── Language ──
   const languageRow = createSettingSelectRow({
     label: t("settings.section.language.label"),
@@ -196,21 +165,82 @@ function buildBehaviorGroup(ctx: SettingsPageContext): HTMLElement {
     ],
     value: getLanguage(),
     onChange: (newLang) => {
-      initLanguage(newLang);
+      // The language applies only through the reload, so a refused switch or a
+      // failed save leaves the whole taskpane in the current language.
       void (async () => {
+        if (deps.isAnyTabBusy?.()) {
+          const proceed = await requestConfirmationDialog({
+            title: t("settings.lang.busy_title"),
+            message: t("settings.lang.busy_message"),
+            confirmLabel: t("settings.lang.busy_confirm"),
+            cancelLabel: t("confirm.cancel"),
+            confirmButtonTone: "danger",
+            restoreFocusOnClose: true,
+          });
+          if (!proceed) {
+            languageRow.select.value = getLanguage();
+            return;
+          }
+        }
+
         try {
           const storage = getAppStorage();
           await storage.settings.set("language", newLang);
-          showToast(t("settings.lang.reloading"));
-          setTimeout(() => location.reload(), 1000);
         } catch {
-          showToast(t("settings.lang.saveFailed"));
+          languageRow.select.value = getLanguage();
+          showToast(t("settings.lang.saveFailed"), { variant: "error" });
+          return;
         }
+        showToast(t("settings.lang.reloading"));
+        setTimeout(() => location.reload(), 1000);
       })();
     },
   });
 
-  group.list.append(autoApply.root, forkToggle.root, languageRow.root);
+  const themeRow = createSettingSelectRow({
+    label: t("settings.theme.label"),
+    options: [
+      { value: "office", label: t("settings.theme.office") },
+      { value: "light", label: t("settings.theme.light") },
+      { value: "dark", label: t("settings.theme.dark") },
+    ],
+    value: getThemeMode(),
+    onChange: (mode) => {
+      if (mode !== "office" && mode !== "light" && mode !== "dark") return;
+      try {
+        setThemeMode(mode);
+      } catch {
+        themeRow.select.value = getThemeMode();
+        showToast(t("settings.theme.saveFailed"), { variant: "error" });
+      }
+    },
+  });
+  themeRow.select.setAttribute("aria-label", t("settings.theme.label"));
+
+  const subscriptionWarning = createSettingToggleRow({
+    label: t("settings.subscriptionWarning"),
+    sublabel: t("settings.subscriptionWarning.sub"),
+  });
+  const settings = getAppStorage().settings;
+  subscriptionWarning.input.setAttribute("aria-label", t("settings.subscriptionWarning"));
+  subscriptionWarning.input.disabled = true;
+  void settings.get(SUBSCRIPTION_WARNING_SETTING).then((value) => {
+    subscriptionWarning.input.checked = value !== false;
+    subscriptionWarning.input.disabled = false;
+  }, () => {
+    showToast(t("settings.subscriptionWarning.failed"), { variant: "error" });
+  });
+  subscriptionWarning.input.addEventListener("change", () => {
+    const enabled = subscriptionWarning.input.checked;
+    subscriptionWarning.input.disabled = true;
+    void settings.set(SUBSCRIPTION_WARNING_SETTING, enabled).then(() => {
+      document.dispatchEvent(new Event("pi:subscription-warning-changed"));
+    }, () => {
+      subscriptionWarning.input.checked = !enabled;
+      showToast(t("settings.subscriptionWarning.failed"), { variant: "error" });
+    }).finally(() => { subscriptionWarning.input.disabled = false; });
+  });
+  group.list.append(autoApply.root, themeRow.root, subscriptionWarning.root, languageRow.root);
   return group.root;
 }
 
@@ -230,6 +260,21 @@ function buildRulesDataGroup(ctx: SettingsPageContext): HTMLElement {
     sublabel: t("settings.row.backups.sub"),
     onActivate: () => ctx.navigate("backups"),
   });
+
+  void (async () => {
+    const settings = getAppStorage().settings;
+    const { workbookId } = await getWorkbookContext();
+    const [userRules, workbookRules] = await Promise.all([
+      getUserRules(settings),
+      getWorkbookRules(settings, workbookId),
+    ]);
+    const active: string[] = [];
+    if (userRules) active.push(t("rules-overlay.all-my-files"));
+    if (workbookRules) active.push(t("rules-overlay.this-file"));
+    rulesRow.setValue(active.length > 0
+      ? t("settings.row.rules.active", { list: active.join(", ") })
+      : t("settings.row.rules.none"));
+  })().catch(() => {});
 
   group.list.append(rulesRow.root, backupsRow.root);
   return group.root;

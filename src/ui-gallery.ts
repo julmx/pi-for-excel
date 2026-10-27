@@ -17,8 +17,11 @@ import "./boot.js";
 // Register web components we render
 import "./ui/register-components.js";
 
+import { createBanner } from "./ui/banner.js";
 import { createCopyableCommand } from "./ui/command-copy.js";
+import { mountTranscriptHarness } from "./ui-gallery-transcript.js";
 import { escapeHtml, setSafeInnerHTML } from "./utils/html.js";
+import type { TurnChangesMessage } from "./messages/turn-changes.js";
 
 const galleryRoot = document.getElementById("gallery-root");
 if (!galleryRoot) throw new Error("Missing #gallery-root");
@@ -176,7 +179,7 @@ const groupSection = section("tool-groups", "Grouped Tool Cards");
 const group = document.createElement("div");
 group.className = "pi-tool-group";
 
-// Real groups always carry a header (see tool-grouping.ts).
+// Real groups always carry a header (rendered by <assistant-message>).
 const groupHeader = document.createElement("button");
 groupHeader.type = "button";
 groupHeader.className = "pi-tool-group__header";
@@ -346,35 +349,55 @@ buttonsSection.appendChild(btnRow);
 
 const toastSection = section("toasts", "Toast Notifications");
 
-for (const [msg, classes] of [
-  ["Closed Chat 3", "pi-toast visible pi-toast--action"],
-  ["Tab name reset", "pi-toast visible"],
-  ["Could not save", "pi-toast visible pi-toast--error"],
+// Same markup as src/ui/toast.ts renders, stacked in a static copy of the region.
+const toastStack = document.createElement("div");
+toastStack.className = "pi-toast-region";
+toastStack.style.cssText = "position: static; transform: none; width: auto;";
+for (const [msg, variant] of [
+  ["Closed “Chat 3”", "action"],
+  ["Renamed tab to “Forecast”", "info"],
+  ["Couldn’t save the session. Try again.", "error"],
 ] as const) {
   const toast = document.createElement("div");
-  toast.className = classes;
-  toast.style.cssText = "position: relative; top: 0; left: 0; transform: none; opacity: 1; pointer-events: auto; margin-bottom: 8px;";
-
-  const content = document.createElement("div");
-  content.className = "pi-toast__content";
+  toast.className = `pi-toast visible${variant === "error" ? " pi-toast--error" : ""}${variant === "action" ? " pi-toast--action" : ""}`;
 
   const message = document.createElement("span");
   message.className = "pi-toast__message";
   message.textContent = msg;
+  toast.appendChild(message);
 
-  content.appendChild(message);
-
-  if (classes.includes("pi-toast--action")) {
+  if (variant === "action") {
     const action = document.createElement("button");
     action.type = "button";
     action.className = "pi-toast__action";
     action.textContent = "Undo";
-    content.appendChild(action);
+    toast.appendChild(action);
   }
 
-  toast.appendChild(content);
-  toastSection.appendChild(toast);
+  if (variant === "error") {
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "pi-toast__dismiss";
+    dismiss.setAttribute("aria-label", "Dismiss");
+    dismiss.textContent = "×";
+    toast.appendChild(dismiss);
+  }
+
+  toastStack.appendChild(toast);
 }
+toastSection.appendChild(toastStack);
+
+/* ── 8b. Banners (src/ui/banner.ts) ──────────────────── */
+
+const bannerSection = section("banners", "Banners (notice area)");
+const bannerStack = document.createElement("div");
+bannerStack.className = "pi-notices";
+bannerStack.append(
+  createBanner({ id: "error", tone: "error", message: "The last request failed: the provider returned 429 (rate limited).", actions: [{ label: "Retry", primary: true, onClick: () => {} }], onDismiss: () => {} }).root,
+  createBanner({ id: "proxy", tone: "warning", message: "The proxy is turned on but isn’t running, so some providers and web tools won’t work.", actions: [{ label: "Show how to start it", onClick: () => {} }], onDismiss: () => {} }).root,
+  createBanner({ id: "disclosure", tone: "info", message: "Pi can search the web, use extensions and connect to services you add.", actions: [{ label: "Got it", primary: true, onClick: () => {} }, { label: "Review in Settings", onClick: () => {} }], onDismiss: () => {} }).root,
+);
+bannerSection.appendChild(bannerStack);
 
 /* ── 9. Markdown rendering (font test) ───────────────── */
 
@@ -388,6 +411,17 @@ Assumptions!B10 = 2025 (start year) − Assumptions!B$49 = 7
 So for Year 7 (column I, calendar year 2031): 2031 – 2025 + 1 = 7 ✓`;
 
 mdSection.appendChild(mdBlock);
+
+const answerSection = section("answer", "Answer actions");
+const answer = document.createElement("assistant-message");
+answer.message = {
+  role: "assistant",
+  content: [{ type: "text", text: "Wrote and verified the data in Sheet1!B2:C4.\n\n| Region | Revenue |\n| --- | --- |\n| East | 17 |\n| West | 29 |" }],
+  api: "openai-responses", provider: "openai", model: "gallery",
+  usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+  stopReason: "stop", timestamp: 1,
+};
+answerSection.append(answer);
 
 /* ── 10. Activity Block (Phase 2 proposal — mockup only) ─ */
 // Condenses a run of tool calls between assistant messages into one
@@ -597,5 +631,49 @@ for (const [label, state] of [
   activitySection.appendChild(caption);
   activitySection.appendChild(createActivityBlock(state));
 }
+
+/* ── 11. Live turn (real sidebar + Agent, scripted stream) ─ */
+
+const transcriptSection = section("transcript", "Live turn (scripted stream)");
+const transcriptControls = document.createElement("div");
+transcriptControls.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
+const transcriptHost = document.createElement("div");
+transcriptHost.style.cssText = "height: 640px; border: 1px solid var(--alpha-8); border-radius: 12px; overflow: hidden;";
+transcriptSection.append(transcriptControls, transcriptHost);
+
+const transcriptHarness = mountTranscriptHarness(transcriptHost);
+window.piTranscriptHarness = transcriptHarness;
+
+for (const [label, action] of [
+  ["Play turn", () => { transcriptHarness.reset(); void transcriptHarness.start({ autoRelease: true }); }],
+  ["Reset", () => transcriptHarness.reset()],
+] as const) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pi-overlay-btn pi-overlay-btn--ghost";
+  button.textContent = label;
+  button.addEventListener("click", action);
+  transcriptControls.appendChild(button);
+}
+
+const turnChangesSection = section("turn-changes", "Turn changes");
+const turnChangesList = document.createElement("message-list");
+turnChangesList.messages = (["finished", "stopped", "failed"] as const).map((outcome, index): TurnChangesMessage => ({
+  role: "turnChanges", turnId: `gallery-turn-${index}`, timestamp: index, outcome,
+  changes: [
+    { address: "Sheet1!B2:B40", changedCount: 39, backupIds: [`gallery-backup-${index}`] },
+    { address: "Summary!A1", changedCount: 1, backupIds: outcome === "failed" ? [] : [`gallery-summary-${index}`] },
+  ],
+}));
+turnChangesSection.append(turnChangesList);
+
+const turnCoverageSection = section("turn-coverage", "Turn undo coverage");
+const turnCoverageList = document.createElement("message-list");
+turnCoverageList.messages = [false, true].map((mixed): TurnChangesMessage => ({
+  role: "turnChanges", turnId: `gallery-coverage-${mixed}`, timestamp: 0, outcome: "finished", ranOfficeJs: true,
+  changes: mixed ? [{ address: "Sheet1!D7", changedCount: 1, backupIds: ["core-backup"] }] : [],
+  ...(mixed ? { officeJsRanges: ["Sheet1!X12", "'Q3 Plan'!B2:C3"] } : {}),
+}));
+turnCoverageSection.append(turnCoverageList);
 
 console.log("[ui-gallery] Rendered all sections");

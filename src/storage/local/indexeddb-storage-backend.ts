@@ -24,6 +24,15 @@ function normalizeIdbKey(key: IDBValidKey): string[] {
   return [];
 }
 
+/** Fired on `window` when this pane's database open waits for another pane to close it. */
+export const STORAGE_UPGRADE_BLOCKED_EVENT = "pi:storage-upgrade-blocked";
+/** Fired on `window` after this pane closed its database for a newer version's upgrade. */
+export const STORAGE_VERSION_CHANGED_EVENT = "pi:storage-version-changed";
+
+function dispatchStorageEvent(type: string): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(type));
+}
+
 export class IndexedDBStorageBackend implements StorageBackend {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private readonly config: IndexedDBConfig;
@@ -37,7 +46,18 @@ export class IndexedDBStorageBackend implements StorageBackend {
       this.dbPromise = new Promise((resolve, reject) => {
         const request = indexedDB.open(this.config.dbName, this.config.version);
         request.onerror = () => reject(toIdbError(request.error));
-        request.onsuccess = () => resolve(request.result);
+        // An older pane still holds the database open; the open continues once it closes.
+        request.onblocked = () => dispatchStorageEvent(STORAGE_UPGRADE_BLOCKED_EVENT);
+        request.onsuccess = () => {
+          const db = request.result;
+          // A newer version wants to upgrade the database: step aside so its
+          // upgrade is not blocked. This pane's storage stops working until reload.
+          db.onversionchange = () => {
+            db.close();
+            dispatchStorageEvent(STORAGE_VERSION_CHANGED_EVENT);
+          };
+          resolve(db);
+        };
         request.onupgradeneeded = () => {
           const db = request.result;
           // Create object stores from config
@@ -154,26 +174,61 @@ export class IndexedDBStorageBackend implements StorageBackend {
     mode: "readonly" | "readwrite",
     operation: (tx: StorageTransaction) => Promise<T>,
   ): Promise<T> {
+    return this.indexedTransaction(storeNames, mode, async (idbTx) => {
+      const storageTx: StorageTransaction = {
+        get: async <V = unknown>(storeName: string, key: string): Promise<V | null> => {
+          const result = await this.promisifyRequest<V | undefined>(
+            idbTx.objectStore(storeName).get(key) as IDBRequest<V | undefined>,
+          );
+          return result ?? null;
+        },
+        set: async <V = unknown>(storeName: string, key: string, value: V): Promise<void> => {
+          await this.putIntoStore(idbTx.objectStore(storeName), key, value);
+        },
+        delete: async (storeName: string, key: string): Promise<void> => {
+          await this.promisifyRequest(idbTx.objectStore(storeName).delete(key));
+        },
+      };
+      return operation(storageTx);
+    });
+  }
+
+  /** Native indexes/cursors for stores with bounded, indexed queries. */
+  async indexedTransaction<T>(
+    storeNames: string[],
+    mode: IDBTransactionMode,
+    operation: (tx: IDBTransaction) => Promise<T>,
+  ): Promise<T> {
     const db = await this.getDB();
     const idbTx = db.transaction(storeNames, mode);
-    const storageTx: StorageTransaction = {
-      get: async <V = unknown>(storeName: string, key: string): Promise<V | null> => {
-        const store = idbTx.objectStore(storeName);
-        const result = await this.promisifyRequest<V | undefined>(
-          store.get(key) as IDBRequest<V | undefined>,
-        );
-        return result ?? null;
-      },
-      set: async <V = unknown>(storeName: string, key: string, value: V): Promise<void> => {
-        const store = idbTx.objectStore(storeName);
-        await this.putIntoStore(store, key, value);
-      },
-      delete: async (storeName: string, key: string): Promise<void> => {
-        const store = idbTx.objectStore(storeName);
-        await this.promisifyRequest(store.delete(key));
-      },
-    };
-    return operation(storageTx);
+    // Settle only once the transaction commits, so a write that fails at
+    // commit time (for example QuotaExceededError) rejects instead of
+    // reporting success.
+    const committed = new Promise<void>((resolve, reject) => {
+      idbTx.oncomplete = () => resolve();
+      idbTx.onabort = () => reject(toIdbError(idbTx.error));
+      idbTx.onerror = () => reject(toIdbError(idbTx.error));
+    });
+    // Callers that fail the operation get that error, not the abort it causes.
+    void committed.catch(() => {});
+    let result: T;
+    try {
+      // A transaction can abort without delivering the pending request's
+      // error (Chromium's oversized structured-clone IPC is one example).
+      result = await Promise.race([
+        operation(idbTx),
+        committed.then(() => new Promise<never>(() => {})),
+      ]);
+    } catch (error) {
+      try {
+        idbTx.abort();
+      } catch {
+        // Already finished or aborted.
+      }
+      throw error;
+    }
+    await committed;
+    return result;
   }
 
   async getQuotaInfo(): Promise<{ usage: number; quota: number; percent: number }> {

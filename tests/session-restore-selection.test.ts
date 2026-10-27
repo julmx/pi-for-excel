@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Agent } from "@earendil-works/pi-agent-core";
 
-import {
-  getCrossWorkbookResumeConfirmMessage,
-  getResumeTargetLabel,
-} from "../src/commands/builtins/resume-target.ts";
 import {
   getAdjacentTabDirectionFromShortcut,
   isCloseActiveTabShortcut,
@@ -14,14 +9,10 @@ import {
   isFocusInputShortcut,
   isReopenLastClosedShortcut,
   isRestoreQueuedMessagesShortcut,
-  isUndoCloseTabShortcut,
   shouldAbortFromEscape,
   shouldBlurEditorFromEscape,
-  shouldHandleUndoCloseTabShortcut,
 } from "../src/taskpane/keyboard-shortcuts.ts";
-import { restoreQueuedMessagesToEditor } from "../src/taskpane/keyboard-shortcuts/editor-actions.ts";
 import { RecentlyClosedStack } from "../src/taskpane/recently-closed.ts";
-import { failOnUnexpectedStream } from "./fail-on-unexpected-stream.ts";
 
 void test("recently closed stack reopens newest first and enforces max size", () => {
   const stack = new RecentlyClosedStack(2);
@@ -59,7 +50,7 @@ void test("recently closed stack reopens newest first and enforces max size", ()
   assert.equal(stack.popMostRecent(), null);
 });
 
-void test("recently closed stack removes duplicate-session entries by unique id", () => {
+void test("recently closed stack keeps one entry per session, the most recent close", () => {
   const stack = new RecentlyClosedStack(5);
 
   stack.push({
@@ -77,44 +68,29 @@ void test("recently closed stack removes duplicate-session entries by unique id"
     workbookId: "wb-a",
   });
 
-  const removed = stack.removeById("closed-a");
-  assert.equal(removed?.id, "closed-a");
   assert.deepEqual(stack.snapshot().map((item) => item.id), ["closed-b"]);
+  assert.equal(stack.removeById("closed-a"), null);
 });
 
-void test("resume target labels and workbook confirmation copy follow selected target", () => {
-  assert.equal(getResumeTargetLabel("new_tab"), "Open in new tab");
-  assert.equal(getResumeTargetLabel("replace_current"), "Replace current tab");
-
-  assert.match(
-    getCrossWorkbookResumeConfirmMessage("new_tab"),
-    /new tab/i,
-  );
-  assert.match(
-    getCrossWorkbookResumeConfirmMessage("replace_current"),
-    /replace the current chat/i,
-  );
-});
-
-void test("Cmd/Ctrl+T detection ignores Shift/Alt-modified chords", () => {
+void test("Ctrl+Alt+N creates tabs without taking browser shortcuts", () => {
   assert.equal(
     isCreateTabShortcut({
-      key: "t",
-      metaKey: true,
-      ctrlKey: false,
+      key: "n",
+      metaKey: false,
+      ctrlKey: true,
       shiftKey: false,
-      altKey: false,
+      altKey: true,
     }),
     true,
   );
 
   assert.equal(
     isCreateTabShortcut({
-      key: "T",
+      key: "N",
       metaKey: false,
       ctrlKey: true,
       shiftKey: false,
-      altKey: false,
+      altKey: true,
     }),
     true,
   );
@@ -142,14 +118,14 @@ void test("Cmd/Ctrl+T detection ignores Shift/Alt-modified chords", () => {
   );
 });
 
-void test("Cmd/Ctrl+W detection ignores Shift/Alt-modified chords", () => {
+void test("Ctrl+Alt+W closes tabs without taking browser shortcuts", () => {
   assert.equal(
     isCloseActiveTabShortcut({
       key: "w",
-      metaKey: true,
-      ctrlKey: false,
+      metaKey: false,
+      ctrlKey: true,
       shiftKey: false,
-      altKey: false,
+      altKey: true,
     }),
     true,
   );
@@ -160,7 +136,7 @@ void test("Cmd/Ctrl+W detection ignores Shift/Alt-modified chords", () => {
       metaKey: false,
       ctrlKey: true,
       shiftKey: false,
-      altKey: false,
+      altKey: true,
     }),
     true,
   );
@@ -188,136 +164,14 @@ void test("Cmd/Ctrl+W detection ignores Shift/Alt-modified chords", () => {
   );
 });
 
-void test("Cmd/Ctrl+Z detection ignores Shift/Alt-modified chords", () => {
-  assert.equal(
-    isUndoCloseTabShortcut({
-      key: "z",
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: false,
-      altKey: false,
-    }),
-    true,
-  );
-
-  assert.equal(
-    isUndoCloseTabShortcut({
-      key: "Z",
-      metaKey: false,
-      ctrlKey: true,
-      shiftKey: false,
-      altKey: false,
-    }),
-    true,
-  );
-
-  assert.equal(
-    isUndoCloseTabShortcut({
-      key: "Unidentified",
-      code: "KeyZ",
-      metaKey: false,
-      ctrlKey: true,
-      shiftKey: false,
-      altKey: false,
-    }),
-    true,
-  );
-
-  assert.equal(
-    isUndoCloseTabShortcut({
-      key: "Unidentified",
-      keyCode: 90,
-      metaKey: false,
-      ctrlKey: true,
-      shiftKey: false,
-      altKey: false,
-    }),
-    true,
-  );
-
-  assert.equal(
-    isUndoCloseTabShortcut({
-      key: "z",
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: true,
-      altKey: false,
-    }),
-    false,
-  );
-
-  assert.equal(
-    isUndoCloseTabShortcut({
-      key: "z",
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: false,
-      altKey: true,
-    }),
-    false,
-  );
-});
-
-void test("Undo-close handling supports empty input + non-input contexts while preserving text undo", () => {
-  assert.equal(
-    shouldHandleUndoCloseTabShortcut({
-      canUndoCloseTab: false,
-      isTextEntry: false,
-      textEntryHasContent: false,
-      actionToastVisible: true,
-    }),
-    false,
-  );
-
-  assert.equal(
-    shouldHandleUndoCloseTabShortcut({
-      canUndoCloseTab: true,
-      isTextEntry: false,
-      textEntryHasContent: false,
-      actionToastVisible: false,
-    }),
-    true,
-  );
-
-  assert.equal(
-    shouldHandleUndoCloseTabShortcut({
-      canUndoCloseTab: true,
-      isTextEntry: true,
-      textEntryHasContent: false,
-      actionToastVisible: false,
-    }),
-    true,
-  );
-
-  assert.equal(
-    shouldHandleUndoCloseTabShortcut({
-      canUndoCloseTab: true,
-      isTextEntry: true,
-      textEntryHasContent: true,
-      actionToastVisible: false,
-    }),
-    false,
-  );
-
-  assert.equal(
-    shouldHandleUndoCloseTabShortcut({
-      canUndoCloseTab: true,
-      isTextEntry: true,
-      textEntryHasContent: true,
-      actionToastVisible: true,
-    }),
-    true,
-  );
-});
-
-void test("Cmd/Ctrl+Shift+T detection ignores Alt-modified chords", () => {
+void test("Ctrl+Alt+Shift+T reopens tabs without taking browser shortcuts", () => {
   assert.equal(
     isReopenLastClosedShortcut({
       key: "t",
-      metaKey: true,
-      ctrlKey: false,
+      metaKey: false,
+      ctrlKey: true,
       shiftKey: true,
-      altKey: false,
+      altKey: true,
     }),
     true,
   );
@@ -328,7 +182,7 @@ void test("Cmd/Ctrl+Shift+T detection ignores Alt-modified chords", () => {
       metaKey: false,
       ctrlKey: true,
       shiftKey: true,
-      altKey: false,
+      altKey: true,
     }),
     true,
   );
@@ -380,7 +234,7 @@ void test("F2 focuses chat input only without modifiers", () => {
   );
 });
 
-void test("Arrow and fallback tab-switch shortcuts resolve expected direction", () => {
+void test("Arrow and Ctrl+Alt tab-switch shortcuts resolve expected direction", () => {
   assert.equal(
     getAdjacentTabDirectionFromShortcut({
       key: "ArrowLeft",
@@ -433,24 +287,24 @@ void test("Arrow and fallback tab-switch shortcuts resolve expected direction", 
 
   assert.equal(
     getAdjacentTabDirectionFromShortcut({
-      key: "[",
+      key: "ArrowLeft",
       repeat: false,
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: true,
-      altKey: false,
+      metaKey: false,
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: true,
     }),
     -1,
   );
 
   assert.equal(
     getAdjacentTabDirectionFromShortcut({
-      key: "]",
+      key: "ArrowRight",
       repeat: false,
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: true,
-      altKey: false,
+      metaKey: false,
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: true,
     }),
     1,
   );
@@ -464,7 +318,7 @@ void test("Arrow and fallback tab-switch shortcuts resolve expected direction", 
       shiftKey: false,
       altKey: false,
     }),
-    -1,
+    null,
   );
 
   assert.equal(
@@ -476,7 +330,7 @@ void test("Arrow and fallback tab-switch shortcuts resolve expected direction", 
       shiftKey: false,
       altKey: false,
     }),
-    1,
+    null,
   );
 
   assert.equal(
@@ -565,126 +419,6 @@ void test("Alt+Up detection matches host fallbacks and rejects modified chords",
     }),
     false,
   );
-});
-
-void test("queued restore prepends follow-up and compact queue items before draft text", () => {
-  const agent = new Agent({
-    streamFn: failOnUnexpectedStream,
-    initialState: {
-      messages: [],
-      tools: [],
-    },
-  });
-
-  let clearQueueCalls = 0;
-  agent.clearAllQueues = () => {
-    clearQueueCalls += 1;
-  };
-
-  const input = { value: "Draft note" };
-  const requeuedCommands: Array<{ name: string; args: string }> = [];
-
-  const restoredCount = restoreQueuedMessagesToEditor({
-    sidebar: {
-      getInput: () => input,
-      getTextarea: () => undefined,
-    },
-    textarea: undefined,
-    agent,
-    queueDisplay: {
-      add: () => {
-        // unused in this test
-      },
-      drainQueuedMessages: () => [
-        { type: "follow-up", text: "Follow-up while streaming" },
-        { type: "steer", text: "Steer while streaming" },
-      ],
-    },
-    actionQueue: {
-      enqueueCommand: (name, args) => {
-        requeuedCommands.push({ name, args });
-      },
-      drainQueuedActions: () => [
-        { type: "prompt", text: "Queued during /compact" },
-        { type: "command", name: "compact", args: "" },
-      ],
-      isBusy: () => true,
-    },
-  });
-
-  assert.equal(restoredCount, 3);
-  assert.equal(clearQueueCalls, 1);
-  assert.deepEqual(requeuedCommands, [{ name: "compact", args: "" }]);
-  assert.equal(
-    input.value,
-    [
-      "Follow-up while streaming",
-      "Steer while streaming",
-      "Queued during /compact",
-      "Draft note",
-    ].join("\n\n"),
-  );
-});
-
-void test("queued restore can drop queued commands when requested", () => {
-  const input = { value: "Draft" };
-  const requeuedCommands: Array<{ name: string; args: string }> = [];
-
-  const restoredCount = restoreQueuedMessagesToEditor({
-    sidebar: {
-      getInput: () => input,
-      getTextarea: () => undefined,
-    },
-    textarea: undefined,
-    agent: null,
-    queueDisplay: {
-      add: () => {
-        // unused in this test
-      },
-      drainQueuedMessages: () => [],
-    },
-    actionQueue: {
-      enqueueCommand: (name, args) => {
-        requeuedCommands.push({ name, args });
-      },
-      drainQueuedActions: () => [{ type: "command", name: "compact", args: "" }],
-      isBusy: () => true,
-    },
-    requeueCommands: false,
-  });
-
-  assert.equal(restoredCount, 0);
-  assert.deepEqual(requeuedCommands, []);
-  assert.equal(input.value, "Draft");
-});
-
-void test("queued restore is a no-op when nothing is pending", () => {
-  const input = { value: "Keep draft" };
-
-  const restoredCount = restoreQueuedMessagesToEditor({
-    sidebar: {
-      getInput: () => input,
-      getTextarea: () => undefined,
-    },
-    textarea: undefined,
-    agent: null,
-    queueDisplay: {
-      add: () => {
-        // unused in this test
-      },
-      drainQueuedMessages: () => [],
-    },
-    actionQueue: {
-      enqueueCommand: () => {
-        // unused in this test
-      },
-      drainQueuedActions: () => [],
-      isBusy: () => false,
-    },
-  });
-
-  assert.equal(restoredCount, 0);
-  assert.equal(input.value, "Keep draft");
 });
 
 void test("Escape exits editor focus only when not streaming", () => {

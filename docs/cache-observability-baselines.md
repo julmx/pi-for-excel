@@ -39,9 +39,27 @@ Use this as the default expectation map when reviewing context-shape changes.
 | Extension add/remove tool (schema delta) | includes `"tools"` | Tool schema changed. |
 | Extension handler hot-reload with same schema | `[]` | #444 uses extension tool revision tracking so handler swaps still refresh runtime tools while schema-stable prefixes remain unchanged. |
 | Extension `llm.complete` side call | Main runtime session: `[]` | Side completions use an extension-scoped session key, so prefix churn is isolated from the primary runtime session. |
+| Auto-context note added (workbook structure changed, files changed, user edit) | `[]` | Notes are messages appended to the transcript, not prompt or tool changes. Each request's messages equal the previous request's messages minus the trailing selection, plus new messages. Verified 2026-10-26 in Excel on the web (8 calls, tool loop + sheet added + user edit: `prefixChanges` 0). |
+| Tool loop grows past the kept tool results | `[]`, but **message-level** prefix breaks | `prefixChangeReasons` covers only model, system prompt and tools; it does not see earlier messages being rewritten. Older large tool results are compacted to previews in steps of the kept count (6 at ≥128k), so an earlier result is rewritten once every 6 new results, not on every call. Check provider `cacheRead` for these: it drops on step calls only. Found 2026-10-27 in the integration pass (cacheRead 38.5k → 9.34k on calls 8 and 10 before the step change). |
+| Selection changed between requests | `[]` | The selection is the last message of every request and is never stored. |
 | Upgrade across a schema-library change (one-off) | First call after upgrade: `["tools"]`; then `[]` | Serialized tool schemas changed bytes without changing meaning. Last such change: 2026-09-10, `@sinclair/typebox` 0.34 → `typebox` 1.3.7 (key order `type` before `description`; string enums as `{type, enum}` instead of `anyOf`/`const`). |
 
 ## Investigation rules
+
+### CL-01 / WT-01 / WT-05 / WT-10 acceptance (PR #808)
+
+The Confirm prompt now makes the dialog the sole consent step, and mutation
+descriptions require explicit sheets. Upgrading a live session across this
+change intentionally changes `systemPrompt` and `tools` once. This is not an
+aggregate byte-stability claim. Turn receipts themselves are UI-only messages
+and are excluded from conversion to model context.
+
+In real Excel on the web with GPT-6 Luna, repeated write/tool continuations
+observed zero prefix changes. With debug snapshots enabled, a fresh run's two
+requests both recorded `prefixChangeReasons: []`. Earlier Auto → Confirm → Auto
+toggles recorded two system-prompt changes and zero tool changes, as expected.
+The upgrade delta was inspected in source, not exercised against an already
+running old build.
 
 If observed reasons differ from the matrix:
 

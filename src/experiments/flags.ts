@@ -10,9 +10,7 @@ import { ALLOW_REMOTE_EXTENSION_URLS_STORAGE_KEY } from "../commands/extension-s
 import { dispatchExperimentalFeatureChanged } from "./events.js";
 
 export type ExperimentalFeatureId =
-  | "ui_dark_mode"
   | "remote_extension_urls"
-  | "extension_permission_gates"
   | "extension_sandbox_runtime"
   | "extension_widget_v2";
 
@@ -20,7 +18,7 @@ export type ExperimentalFeatureWiring = "wired" | "flag-only";
 
 export interface ExperimentalFeatureDefinition {
   id: ExperimentalFeatureId;
-  /** Slash-command token, e.g. `/experimental on extension-permissions` */
+  /** Slash-command token, e.g. `/experimental on remote-extension-urls` */
   slug: string;
   /** Alternate tokens accepted by the resolver. */
   aliases: readonly string[];
@@ -36,15 +34,6 @@ export interface ExperimentalFeatureDefinition {
 function getFeatures(): readonly ExperimentalFeatureDefinition[] {
   return [
     {
-      id: "ui_dark_mode",
-      slug: "dark-mode",
-      aliases: ["theme-dark", "ui-dark-mode"],
-      title: t("experimental.dark_mode.title"),
-      description: t("experimental.dark_mode.desc"),
-      wiring: "wired",
-      storageKey: "pi.experimental.uiDarkMode",
-    },
-    {
       id: "remote_extension_urls",
       slug: "remote-extension-urls",
       aliases: ["remote-extensions", "extensions-urls"],
@@ -53,15 +42,6 @@ function getFeatures(): readonly ExperimentalFeatureDefinition[] {
       warning: t("experimental.remote_urls.warning"),
       wiring: "wired",
       storageKey: ALLOW_REMOTE_EXTENSION_URLS_STORAGE_KEY,
-    },
-    {
-      id: "extension_permission_gates",
-      slug: "extension-permissions",
-      aliases: ["extensions-permissions", "extension-capability-gates"],
-      title: t("experimental.permission_gates.title"),
-      description: t("experimental.permission_gates.desc"),
-      wiring: "wired",
-      storageKey: "pi.experimental.extensionPermissionGates",
     },
     {
       id: "extension_sandbox_runtime",

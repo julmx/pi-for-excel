@@ -1,6 +1,7 @@
 import {
   createModels,
   createProvider,
+  isModelType,
   lazyApi,
   type Api,
   type ApiKeyAuth,
@@ -13,7 +14,10 @@ import {
   type Provider,
   type ProviderStreams,
 } from "@earendil-works/pi-ai";
-import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import {
+  builtinProviders,
+  getBuiltinModelDataGeneratedAt,
+} from "@earendil-works/pi-ai/providers/all";
 
 import { originalFetch } from "../auth/cors-proxy.js";
 import { isOpenAiGatewayProvider } from "../auth/custom-gateways.js";
@@ -24,6 +28,8 @@ import {
 } from "../auth/enterprise-model-policy.js";
 import { normalizeProxyUrl } from "../auth/proxy-validation.js";
 import type { CustomProvider } from "../storage/local/custom-providers-store.js";
+import { MAX_MODEL_ID_LENGTH } from "../storage/local/model-catalogs-store.js";
+import { withRemoteCatalog } from "./remote-model-catalog.js";
 import {
   ProviderCredentialsStore,
   type ProviderKeysStoreLike,
@@ -34,7 +40,6 @@ const DEFAULT_DISCOVERED_MAX_TOKENS = 4_096;
 const MODEL_DISCOVERY_TIMEOUT_MS = 8_000;
 const MAX_MODEL_DISCOVERY_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_DISCOVERED_MODELS = 2_000;
-const MAX_DISCOVERED_MODEL_ID_LENGTH = 256;
 
 const openAiCompletionsStreams: ProviderStreams = lazyApi(
   () => import("@earendil-works/pi-ai/api/openai-completions"),
@@ -79,6 +84,8 @@ export interface BrowserProviderRegistration {
   allowKeyless?: boolean;
 }
 
+export type ProviderRoute = "proxy" | "direct";
+
 export interface CreateBrowserModelRuntimeOptions {
   providerKeys: ProviderKeysStoreLike;
   modelCatalogs: ModelsStore;
@@ -86,6 +93,8 @@ export interface CreateBrowserModelRuntimeOptions {
   fetchFn?: typeof globalThis.fetch;
   /** Injectable for tests; deployed builds read their build-time endpoint policy. */
   enterprisePolicy?: EnterpriseModelPolicy;
+  /** Relay URL for a built-in provider's pi.dev catalogue. Omit to use only bundled models. */
+  modelCatalogUrl?: (providerId: string) => string;
 }
 
 interface DynamicProviderCatalogSpec {
@@ -126,6 +135,13 @@ function streamsForApi(api: BrowserProviderApi): ProviderStreams {
   return anthropicMessagesStreams;
 }
 
+/**
+ * Pi AI's OpenAI and Anthropic clients refuse to send a request without an API key.
+ * Keyless servers such as llama.cpp, Ollama and LM Studio ignore the header, so keyless
+ * providers send this placeholder instead of failing before the request.
+ */
+const KEYLESS_PROVIDER_API_KEY = "pi-for-excel-keyless";
+
 function createStoredApiKeyAuth(args: {
   name: string;
   resolveApiKey: () => Promise<string | undefined>;
@@ -138,7 +154,7 @@ function createStoredApiKeyAuth(args: {
       if (!key && !args.allowKeyless) return undefined;
 
       return {
-        auth: key ? { apiKey: key } : {},
+        auth: { apiKey: key || KEYLESS_PROVIDER_API_KEY },
         source: key ? "Browser credential store" : "Keyless provider",
       };
     },
@@ -228,6 +244,8 @@ function sanitizeCatalogEntry(
 ): ModelsStoreEntry {
   const models: Model<Api>[] = [];
   for (const model of entry.models) {
+    // Dynamic browser providers only register chat transports.
+    if (!isModelType(model, "chat")) continue;
     try {
       models.push(createModel({
         providerId,
@@ -307,9 +325,9 @@ function parseModelIds(value: unknown): string[] {
     if (!isModelsResponse(entry) || typeof entry.id !== "string") continue;
     const id = entry.id.trim();
     if (id.length === 0) continue;
-    if (id.length > MAX_DISCOVERED_MODEL_ID_LENGTH) {
+    if (id.length > MAX_MODEL_ID_LENGTH) {
       throw new Error(
-        `Discovered model id exceeds ${MAX_DISCOVERED_MODEL_ID_LENGTH} characters.`,
+        `Discovered model id exceeds ${MAX_MODEL_ID_LENGTH} characters.`,
       );
     }
     ids.push(id);
@@ -567,8 +585,10 @@ export class BrowserModelRuntime {
   private readonly enterprisePolicy: EnterpriseModelPolicy | null;
   private readonly builtinProviderIds = new Set<string>();
   private readonly customProviderIds = new Set<string>();
+  private readonly directCustomProviderIds = new Set<string>();
   private readonly extensionProviderOwners = new Map<string, string>();
   private readonly dynamicProviderAbortControllers = new Map<string, AbortController>();
+  private dynamicProviderRevision = 0;
 
   constructor(options: CreateBrowserModelRuntimeOptions) {
     this.modelCatalogs = new BrowserModelCatalogsStore(options.modelCatalogs);
@@ -604,14 +624,31 @@ export class BrowserModelRuntime {
       this.models.setProvider(placeholder);
       this.builtinProviderIds.add(placeholder.id);
     } else {
+      const catalogUrl = options.modelCatalogUrl;
       for (const provider of builtinProviders()) {
-        const browserProvider = provider.auth.apiKey
+        const adapted = provider.auth.apiKey
           ? provider
           : createBrowserAdapterProvider(provider);
+        // Providers that refresh their own catalogue (Radius) keep it.
+        const browserProvider = catalogUrl && !adapted.refreshModels
+          ? withRemoteCatalog(adapted, {
+            catalogUrl,
+            fetchFn: this.fetchFn,
+            bundledGeneratedAt: getBuiltinModelDataGeneratedAt(),
+          })
+          : adapted;
         this.models.setProvider(browserProvider);
         this.builtinProviderIds.add(browserProvider.id);
       }
     }
+  }
+
+  /**
+   * Increases whenever a custom or extension provider is registered or removed.
+   * A refresh pass only covers the providers registered when it started.
+   */
+  get providerRevision(): number {
+    return this.dynamicProviderRevision;
   }
 
   private createDynamicProvider(registration: BrowserProviderRegistration): Provider {
@@ -625,16 +662,19 @@ export class BrowserModelRuntime {
 
     this.dynamicProviderAbortControllers.get(provider.id)?.abort();
     this.dynamicProviderAbortControllers.set(provider.id, controller);
+    this.dynamicProviderRevision += 1;
     return provider;
   }
 
   private stopDynamicProvider(providerId: string): void {
     this.dynamicProviderAbortControllers.get(providerId)?.abort();
     this.dynamicProviderAbortControllers.delete(providerId);
+    this.dynamicProviderRevision += 1;
   }
 
   async syncCustomProviders(customProviders: readonly CustomProvider[]): Promise<void> {
     const nextIds = new Set<string>();
+    const nextDirectIds = new Set<string>();
 
     for (const customProvider of customProviders) {
       for (const registration of customProviderRegistrations(customProvider, this.enterprisePolicy)) {
@@ -656,6 +696,7 @@ export class BrowserModelRuntime {
         });
         this.models.setProvider(provider);
         nextIds.add(registration.id);
+        if (customProvider.connectDirectly === true) nextDirectIds.add(registration.id);
       }
     }
 
@@ -672,6 +713,8 @@ export class BrowserModelRuntime {
 
     this.customProviderIds.clear();
     for (const providerId of nextIds) this.customProviderIds.add(providerId);
+    this.directCustomProviderIds.clear();
+    for (const providerId of nextDirectIds) this.directCustomProviderIds.add(providerId);
   }
 
   registerExtensionProvider(ownerId: string, registration: BrowserProviderRegistration): void {
@@ -701,8 +744,17 @@ export class BrowserModelRuntime {
     return this.extensionProviderOwners.has(providerId);
   }
 
-  shouldProxyProvider(providerId: string): boolean {
-    return this.customProviderIds.has(providerId) || this.extensionProviderOwners.has(providerId);
+  /**
+   * Route for providers this runtime registered: custom and extension providers use the
+   * proxy when it is enabled, unless a custom gateway connects directly. Undefined for
+   * built-in providers, whose routing stays with the stream layer.
+   */
+  providerRoute(providerId: string): ProviderRoute | undefined {
+    if (this.directCustomProviderIds.has(providerId)) return "direct";
+    if (this.customProviderIds.has(providerId) || this.extensionProviderOwners.has(providerId)) {
+      return "proxy";
+    }
+    return undefined;
   }
 
   async unregisterExtensionProvider(ownerId: string, providerId: string): Promise<void> {

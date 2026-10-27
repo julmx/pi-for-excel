@@ -2,6 +2,9 @@
 
 ## Run every deterministic suite
 
+Run `npm run verify` before a PR: it runs each `check` sub-step, full `npm test`, Chromium tests and build, continuing after failures with excerpts and log paths. `npm run check` and the pre-commit hook remain unchanged.
+Use `npm run verify -- --last` to reread the previous report without rerunning. Identical tracked and non-ignored untracked content reuses a pass; use `--force` after changing ignored dependencies or the environment. See `--help` for timeout guidance.
+
 `npm test` discovers `tests/**/*.test.ts` and `tests/**/*.test.mjs`. CI runs this command. Adding a test must not require editing a file list.
 
 Keep fixtures under `tests/fixtures/` without a `.test` suffix. Do not import another test file to run its tests. Targeted commands such as `test:context` remain conveniences; the canonical full gate is `npm test`.
@@ -40,7 +43,7 @@ Behavior changes still require the model-driven acceptance described in `coding-
 
 ## Browser contracts
 
-Run `npm run test:browser` for taskpane behavior in real headless Chromium (files run serially: each boots its own Vite server and Chromium, and parallel boots contend on the Vite dependency optimizer and time out), or `npm run test:all` for the deterministic and browser suites together. Install the pinned browser once with `npx playwright install chromium` if it is not already cached.
+Run `npm run test:browser` for taskpane behavior in real headless Chromium (files run serially: each boots its own Vite server and Chromium, and parallel boots contend on the Vite dependency optimizer and time out), or `npm run test:all` for the deterministic and browser suites together. Install the pinned browser once with `npx playwright install chromium` if it is not already cached. The recording contract also requires system `ffmpeg` and `ffprobe`.
 
 Add a browser contract under `tests/browser/` when the capability depends on real DOM entry, event propagation, focus, accessibility or rendered visibility. Use the `*.browser-test.ts` suffix so `npm test` remains browser-free. Enter through user-visible controls and assert the visible outcome rather than implementation names.
 

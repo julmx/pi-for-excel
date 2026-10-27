@@ -6,18 +6,19 @@
  * - Cell value rules (greater/less/equal/between)
  */
 
+import { runMutation } from "./mutation/run-mutation.js";
+import { recoveryTurn, type RecoveryAttribution } from "./recovery-metadata.js";
 import { Type, type Static } from "typebox";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { excelRun, getRange, qualifiedAddress } from "../excel/helpers.js";
+import { getRange, qualifiedAddress } from "../excel/helpers.js";
 import { getWorkbookChangeAuditLog } from "../audit/workbook-change-audit.js";
 import { captureConditionalFormatState } from "../workbook/recovery-states.js";
 import { getWorkbookRecoveryLog } from "../workbook/recovery-log.js";
-import { getErrorMessage } from "../utils/errors.js";
 import type { ConditionalFormatDetails } from "./tool-details.js";
 import {
-  CHECKPOINT_SKIPPED_NOTE,
   CHECKPOINT_SKIPPED_REASON,
 } from "./recovery-metadata.js";
+import { describeExcelFailure, parseExcelError, unchangedClause } from "./mutation/excel-failure.js";
 import { finalizeMutationOperation } from "./mutation/finalize.js";
 import { appendMutationResultNote } from "./mutation/result-note.js";
 import type { MutationFinalizeDependencies } from "./mutation/types.js";
@@ -27,7 +28,7 @@ const schema = Type.Object({
     description: '"add" to create a rule, "clear" to remove all rules in the range.',
   }),
   range: Type.String({
-    description: 'Target range, e.g. "A1:D10" or "Sheet2!B2:B50".',
+    description: 'Sheet-qualified target range, e.g. "Sheet2!B2:B50". Sheet name required.',
   }),
   type: Type.Optional(
     Type.Union([Type.Literal("formula"), Type.Literal("cell_value")], {
@@ -89,7 +90,7 @@ const mutationFinalizeDependencies: MutationFinalizeDependencies = {
   appendAuditEntry: (entry) => getWorkbookChangeAuditLog().append(entry),
 };
 
-export function createConditionalFormatTool(): AgentTool<typeof schema, ConditionalFormatDetails> {
+export function createConditionalFormatTool(attribution: RecoveryAttribution = {}): AgentTool<typeof schema, ConditionalFormatDetails> {
   return {
     name: "conditional_format",
     label: "Conditional Format",
@@ -102,7 +103,7 @@ export function createConditionalFormatTool(): AgentTool<typeof schema, Conditio
     ): Promise<AgentToolResult<ConditionalFormatDetails>> => {
       try {
         if (params.action === "clear") {
-          return await clearFormats(toolCallId, params);
+          return await clearFormats(toolCallId, params, attribution);
         }
 
         if (!params.type) {
@@ -131,12 +132,14 @@ export function createConditionalFormatTool(): AgentTool<typeof schema, Conditio
               kind: "conditional_format",
               action: params.action,
             },
+            isError: true,
           };
         }
 
-        return await addFormat(toolCallId, params);
+        return await addFormat(toolCallId, params, attribution);
       } catch (e) {
-        const message = getErrorMessage(e);
+        const failure = await describeExcelFailure(parseExcelError(e), { range: params.range });
+        const message = failure.reason;
 
         await finalizeMutationOperation(mutationFinalizeDependencies, {
           auditEntry: {
@@ -151,11 +154,12 @@ export function createConditionalFormatTool(): AgentTool<typeof schema, Conditio
         });
 
         return {
-          content: [{ type: "text", text: `Error: ${message}` }],
+          content: [{ type: "text", text: `Error (${params.action} on ${params.range})${unchangedClause(failure, "conditional formats were not changed")}. ${message}` }],
           details: {
             kind: "conditional_format",
             action: params.action,
           },
+          isError: true,
         };
       }
     },
@@ -165,10 +169,11 @@ export function createConditionalFormatTool(): AgentTool<typeof schema, Conditio
 async function clearFormats(
   toolCallId: string,
   params: Params,
+  attribution: RecoveryAttribution,
 ): Promise<AgentToolResult<ConditionalFormatDetails>> {
   const checkpointState = await captureConditionalFormatState(params.range);
 
-  const result = await excelRun(async (context) => {
+  const result = await runMutation(async (context) => {
     const { sheet, range } = getRange(context, params.range);
     sheet.load("name");
     range.load("address,rowCount,columnCount");
@@ -222,6 +227,7 @@ async function clearFormats(
         }
 
         return getWorkbookRecoveryLog().appendConditionalFormat({
+          ...recoveryTurn(attribution, toolCallId),
           toolName: "conditional_format",
           toolCallId,
           address: fullAddr,
@@ -232,7 +238,6 @@ async function clearFormats(
       },
       appendResultNote: appendMutationResultNote,
       unavailableReason: recoveryUnavailableReason,
-      unavailableNote: CHECKPOINT_SKIPPED_NOTE,
     },
   });
 
@@ -242,12 +247,13 @@ async function clearFormats(
 async function addFormat(
   toolCallId: string,
   params: Params,
+  attribution: RecoveryAttribution,
 ): Promise<AgentToolResult<ConditionalFormatDetails>> {
   validateAddParams(params);
 
   const checkpointState = await captureConditionalFormatState(params.range);
 
-  const result = await excelRun(async (context) => {
+  const result = await runMutation(async (context) => {
     const { sheet, range } = getRange(context, params.range);
     sheet.load("name");
     range.load("address,rowCount,columnCount");
@@ -343,6 +349,7 @@ async function addFormat(
         }
 
         return getWorkbookRecoveryLog().appendConditionalFormat({
+          ...recoveryTurn(attribution, toolCallId),
           toolName: "conditional_format",
           toolCallId,
           address: fullAddr,
@@ -353,7 +360,6 @@ async function addFormat(
       },
       appendResultNote: appendMutationResultNote,
       unavailableReason: recoveryUnavailableReason,
-      unavailableNote: CHECKPOINT_SKIPPED_NOTE,
     },
   });
 
@@ -406,4 +412,3 @@ function applyFormat(format: Excel.ConditionalRangeFormat, params: Params): void
     format.font.underline = params.underline ? "Single" : "None";
   }
 }
-

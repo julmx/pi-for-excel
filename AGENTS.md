@@ -10,7 +10,7 @@ Notes for agents working in this repo.
 - UI/CSS architecture: `src/ui/README.md` (first-party preflight; keep it faithful)
 - Upstream divergences: `docs/upstream-divergences.md` (read before adding new divergences)
 - Docs index: `docs/README.md`
-- Model registry freshness: `docs/model-updates.md` (if **Last verified** > 1 week, refresh Pi deps + re-verify model IDs before model UX changes)
+- Model catalogue and Pi upgrades: `docs/model-updates.md` (new models arrive at runtime from pi.dev; Pi upgrades are manual)
 
 ## High-leverage conventions
 
@@ -86,12 +86,21 @@ Use the local acceptance policy in `docs/coding-standards.md` and the `.agents/s
 
 The Excel lane runs entirely in the background, including opening the pane after a relaunch (the skill bootstraps it from the scratch workbook) and reading what the taskpane persisted (straight from WebKit's IndexedDB). Work through the skill's "Before you call it blocked" table before reporting the lane blocked; each row there has been hit and worked around.
 
-- `npm run check`
-- `npm run build`
-- `npm run test:models`
-- `npm run test:context` when touching prompt/context/tool disclosure/session wiring
-- `npm run test:security` when touching proxy/bridge/auth/HTML safety paths
+- `npm run verify` runs all deterministic gates and reports every failure; see `docs/testing.md`.
+- `npm run verify -- --last` reprints the report; `--force` bypasses the content cache; `--help` includes timeout guidance.
 - Manual Excel smoke test when touching session persistence, tools, auth, or UI wiring
+
+### Amp orbs (Excel on the web)
+
+Never print a secret's value. Refer to credentials (`PI_EXCEL_WEB_AUTH_JSON`, `PI_EXCEL_WEB_FOLDER_LINK`, `auth.json`, tokens) by name. To inspect the environment, print names only (`env | cut -d= -f1`); do not run `env`, `printenv`, `set` or `set -x`, or `cat` a credential file, and never paste a value into a message, log, commit or report.
+
+Orbs cannot run desktop Excel. `.agents/setup` and `.amp/services.yaml` prepare
+the dev server, CORS proxy and trusted localhost certs.
+`node scripts/orb/excel-web-session.mjs --check` then opens Pi in Excel on the
+web in the orb's own workbook, signed out, using the `PI_EXCEL_WEB_FOLDER_LINK`
+project secret (no Microsoft sign-in), logged into a model via the
+`PI_EXCEL_WEB_AUTH_JSON` secret; `--prompt "..."` runs a real agent turn. See
+`docs/orb-excel-web.md`.
 
 ### Visual UI verification (agent-browser)
 
@@ -108,7 +117,7 @@ without needing Excel. It renders mock components with the real CSS theme.
 
 Available gallery sections (use as argument):
 `badges`, `file-items`, `tool-cards`, `tool-groups`, `diff-table`,
-`text-preview`, `buttons`, `toasts`, `markdown`
+`text-preview`, `buttons`, `toasts`, `banners`, `markdown`
 
 Or use agent-browser directly for interactive inspection:
 ```bash
@@ -132,6 +141,10 @@ When to add new gallery sections:
 - Adding a new component type → add a mock render in `src/ui-gallery.ts`
 - Changing CSS for an existing component → verify via `./scripts/ui-verify.sh <section>`
 - Before/after comparison → screenshot before change, make edit, screenshot again
+
+## Pull requests
+- One independent review per PR, at the end: see the Review section of `docs/coding-standards.md`.
+- You can now natively stack PRs with `gh stack` if helpful.
 
 ## Pre-commit
 - `.githooks/pre-commit` runs `npm run check`.

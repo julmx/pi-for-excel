@@ -19,6 +19,7 @@ import {
   createButton,
   createConfigInput,
   createConfigRow,
+  createToggleRow,
 } from "../../ui/extensions-hub-components.js";
 import { createOverlaySectionTitle } from "../../ui/overlay-dialog.js";
 import { showToast } from "../../ui/toast.js";
@@ -112,8 +113,13 @@ function createGatewayCard(args: {
   keyState.className = "pi-settings-gateway-item__meta";
   keyState.textContent = args.gateway.apiKey.length > 0 ? t("custom-gateway.gatewayApiKeyConfigured") : t("custom-gateway.gatewayApiKeyNone");
 
-  card.append(topRow, endpoint, model, contextWindow, maxTokens, keyState);
+  const connection = document.createElement("p");
+  connection.className = "pi-settings-gateway-item__meta";
+  connection.textContent = args.gateway.connectDirectly
+    ? t("custom-gateway.gatewayConnectionDirect")
+    : t("custom-gateway.gatewayConnectionProxy");
 
+  card.append(topRow, endpoint, model, contextWindow, maxTokens, keyState, connection);
   const enterprisePolicy = readBuildEnterpriseModelPolicy();
   if (enterprisePolicy) {
     const approved = enterprisePolicy.baseUrls.includes(args.gateway.endpointUrl);
@@ -127,9 +133,15 @@ function createGatewayCard(args: {
   return card;
 }
 
+export interface CustomGatewaySection {
+  section: HTMLElement;
+  /** True while the form differs from the gateway being edited (or from empty). */
+  hasUnsavedChanges: () => boolean;
+}
+
 export async function buildCustomGatewaySection(
   options: BuildCustomGatewaySectionOptions,
-): Promise<HTMLElement> {
+): Promise<CustomGatewaySection> {
   const enterpriseMode = readBuildEnterpriseModelPolicy() !== null;
   const section = document.createElement("section");
   section.className = "pi-overlay-section pi-settings-section";
@@ -178,6 +190,11 @@ export async function buildCustomGatewaySection(
     type: "password",
   });
 
+  const connectDirectlyToggle = createToggleRow({
+    label: t("custom-gateway.connectDirectlyLabel"),
+    sublabel: t("custom-gateway.connectDirectlyHint"),
+  });
+
   const errorText = document.createElement("p");
   errorText.className = "pi-overlay-hint pi-overlay-text-warning";
   errorText.hidden = true;
@@ -209,6 +226,7 @@ export async function buildCustomGatewaySection(
     createConfigRow(t("custom-gateway.configLabelMaxTokens"), maxTokensInput),
     createHint(t("custom-gateway.maxTokensHint")),
     createConfigRow(t("custom-gateway.configLabelApiKey"), apiKeyInput),
+    connectDirectlyToggle.root,
     errorText,
     formActions,
   );
@@ -234,6 +252,17 @@ export async function buildCustomGatewaySection(
     errorText.textContent = message;
   };
 
+  const readFormValues = (): string => JSON.stringify([
+    nameInput.value,
+    endpointInput.value,
+    modelInput.value,
+    contextWindowInput.value,
+    maxTokensInput.value,
+    apiKeyInput.value,
+    connectDirectlyToggle.input.checked,
+  ]);
+  let savedFormValues = "";
+
   const resetForm = (): void => {
     editingGatewayId = null;
     nameInput.value = "";
@@ -242,9 +271,11 @@ export async function buildCustomGatewaySection(
     contextWindowInput.value = "";
     maxTokensInput.value = "";
     apiKeyInput.value = "";
+    connectDirectlyToggle.input.checked = false;
     cancelButton.hidden = true;
     saveButton.textContent = t("custom-gateway.saveGateway");
     setError(null);
+    savedFormValues = readFormValues();
   };
 
   const startEditing = (gateway: OpenAiGatewayConfig): void => {
@@ -255,9 +286,11 @@ export async function buildCustomGatewaySection(
     contextWindowInput.value = String(gateway.contextWindow);
     maxTokensInput.value = String(gateway.maxTokens);
     apiKeyInput.value = gateway.apiKey;
+    connectDirectlyToggle.input.checked = gateway.connectDirectly;
     cancelButton.hidden = false;
     saveButton.textContent = t("custom-gateway-settings.update-gateway");
     setError(null);
+    savedFormValues = readFormValues();
     nameInput.focus();
   };
 
@@ -326,7 +359,6 @@ export async function buildCustomGatewaySection(
         const contextWindow = rawContextWindow.length > 0
           ? Number(rawContextWindow)
           : undefined;
-
         const rawMaxTokens = maxTokensInput.value.trim();
         const maxTokens = rawMaxTokens.length > 0
           ? Number(rawMaxTokens)
@@ -341,6 +373,7 @@ export async function buildCustomGatewaySection(
           apiKey: apiKeyInput.value,
           ...(contextWindow !== undefined ? { contextWindow } : {}),
           ...(maxTokens !== undefined ? { maxTokens } : {}),
+          connectDirectly: connectDirectlyToggle.input.checked,
         }, options.models);
 
         await reloadGateways();
@@ -365,11 +398,12 @@ export async function buildCustomGatewaySection(
 
   await reloadGateways();
   renderList();
+  savedFormValues = readFormValues();
 
   content.append(formCard, listTitle, listHost);
   if (options.includeHeading !== false) {
     section.append(title, hint);
   }
   section.append(content);
-  return section;
+  return { section, hasUnsavedChanges: () => readFormValues() !== savedFormValues };
 }

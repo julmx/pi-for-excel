@@ -15,6 +15,7 @@ import { t } from "../language/index.js";
 import type { ConnectionManager } from "../connections/manager.js";
 import {
   createExtensionAPI,
+  dismissLegacyWidgetOwnedBy,
   loadExtension,
   type ExtensionCommand,
   type ExtensionModelProviderDefinition,
@@ -31,13 +32,13 @@ import {
   type ExtensionRuntimeMode,
 } from "./runtime-mode.js";
 import { commandRegistry } from "../commands/types.js";
+import { assertExtensionModuleSourceAllowed } from "../commands/extension-module-import.js";
 import {
   describeExtensionCapability,
   describeStoredExtensionTrust,
   deriveStoredExtensionTrust,
   getDefaultPermissionsForTrust,
   isExtensionCapabilityAllowed,
-  listAllExtensionCapabilities,
   listGrantedExtensionCapabilities,
   setExtensionCapabilityAllowed,
   type ExtensionCapability,
@@ -46,6 +47,7 @@ import {
 } from "./permissions.js";
 import {
   loadStoredExtensions,
+  readIntactStoredExtensionIds,
   saveStoredExtensions,
   type StoredExtensionEntry,
   type StoredExtensionSource,
@@ -73,6 +75,7 @@ import {
 } from "./runtime-manager-helpers.js";
 import { buildRuntimeManagerActivationBridge } from "./runtime-manager-activation.js";
 import {
+  isExtensionOwnedId,
   qualifyExtensionConnectionId,
   qualifyExtensionProviderId,
 } from "./owner-identifiers.js";
@@ -87,6 +90,8 @@ import type {
 import type { SettingsWriter } from "../storage/local/settings-store.js";
 
 type AnyAgentTool = AgentTool;
+
+const ORPHANED_CONNECTIONS_CLEANED_KEY = "extensions.orphaned-connections-cleaned.v1";
 
 interface ExtensionToolExecutionBoundary {
   execute?: unknown;
@@ -164,7 +169,6 @@ export interface ExtensionRuntimeStatus {
   permissions: StoredExtensionPermissions;
   grantedCapabilities: ExtensionCapability[];
   effectiveCapabilities: ExtensionCapability[];
-  permissionsEnforced: boolean;
   commandNames: string[];
   toolNames: string[];
   modelProviderIds: string[];
@@ -235,15 +239,11 @@ export class ExtensionRuntimeManager {
   }
 
   list(): ExtensionRuntimeStatus[] {
-    const permissionsEnforced = isExperimentalFeatureEnabled("extension_permission_gates");
     const sandboxHostFallbackEnabled = isExperimentalFeatureEnabled("extension_sandbox_runtime");
 
     return this.entries.map((entry) => {
       const state = this.activeStates.get(entry.id);
       const grantedCapabilities = listGrantedExtensionCapabilities(entry.permissions);
-      const effectiveCapabilities = permissionsEnforced
-        ? grantedCapabilities
-        : listAllExtensionCapabilities();
       const runtimeMode = state
         ? state.runtimeMode
         : resolveExtensionRuntimeMode(entry.trust, sandboxHostFallbackEnabled);
@@ -261,8 +261,7 @@ export class ExtensionRuntimeManager {
         runtimeLabel: describeExtensionRuntimeMode(runtimeMode),
         permissions: entry.permissions,
         grantedCapabilities,
-        effectiveCapabilities,
-        permissionsEnforced,
+        effectiveCapabilities: grantedCapabilities,
         commandNames: state ? Array.from(state.commandNames).sort() : [],
         toolNames: state ? Array.from(state.toolNames).sort() : [],
         modelProviderIds: state ? Array.from(state.modelProviderIds).sort() : [],
@@ -300,6 +299,16 @@ export class ExtensionRuntimeManager {
       return;
     }
 
+    // Finish or skip the migration before loading can replace an unreadable registry.
+    if ((await this.settings.get(ORPHANED_CONNECTIONS_CLEANED_KEY)) !== true) {
+      const installedIds = await readIntactStoredExtensionIds(this.settings);
+      if (installedIds) {
+        await this.connectionManager.deleteStoredRecords((connectionId) =>
+          connectionId.startsWith("ext.")
+          && !installedIds.some((entryId) => isExtensionOwnedId(entryId, connectionId)));
+      }
+      await this.settings.set(ORPHANED_CONNECTIONS_CLEANED_KEY, true);
+    }
     this.entries = await loadStoredExtensions(this.settings);
 
     for (const entry of this.entries) {
@@ -391,6 +400,9 @@ export class ExtensionRuntimeManager {
 
     await this.deactivateEntry(entryId);
     this.connectionManager.unregisterDefinitionsByOwner(entryId);
+    await this.connectionManager.deleteStoredRecords(
+      (connectionId) => isExtensionOwnedId(entryId, connectionId),
+    );
     await clearExtensionStorage(this.settings, entryId);
     this.entries.splice(entryIndex, 1);
     this.lastErrors.delete(entryId);
@@ -401,16 +413,26 @@ export class ExtensionRuntimeManager {
 
   async installFromUrl(name: string, url: string): Promise<string> {
     this.assertExtensionsEnabled();
+    const specifier = normalizeRemoteUrl(url);
+    assertExtensionModuleSourceAllowed(specifier);
     return this.installEntry({
       name: normalizeExtensionName(name),
       source: {
         kind: "module",
-        specifier: normalizeRemoteUrl(url),
+        specifier,
       },
     });
   }
 
-  async installFromCode(name: string, code: string): Promise<string> {
+  /**
+   * Install pasted/generated code. `grantCapabilities` are granted on top of
+   * the untrusted defaults; callers must have shown them to the user.
+   */
+  async installFromCode(
+    name: string,
+    code: string,
+    grantCapabilities: readonly ExtensionCapability[] = [],
+  ): Promise<string> {
     this.assertExtensionsEnabled();
     return this.installEntry({
       name: normalizeExtensionName(name),
@@ -418,6 +440,7 @@ export class ExtensionRuntimeManager {
         kind: "inline",
         code: normalizeInlineCode(code),
       },
+      grantCapabilities,
     });
   }
 
@@ -619,19 +642,25 @@ export class ExtensionRuntimeManager {
   private async installEntry(input: {
     name: string;
     source: StoredExtensionSource;
+    grantCapabilities?: readonly ExtensionCapability[];
   }): Promise<string> {
     this.assertExtensionsEnabled();
     const now = new Date().toISOString();
     const id = `ext.${crypto.randomUUID()}`;
 
     const trust = deriveStoredExtensionTrust(id, input.source);
+    let permissions = getDefaultPermissionsForTrust(trust);
+    for (const capability of input.grantCapabilities ?? []) {
+      permissions = setExtensionCapabilityAllowed(permissions, capability, true);
+    }
+
     const entry: StoredExtensionEntry = {
       id,
       name: input.name,
       enabled: true,
       source: input.source,
       trust,
-      permissions: getDefaultPermissionsForTrust(trust),
+      permissions,
       createdAt: now,
       updatedAt: now,
     };
@@ -933,19 +962,14 @@ export class ExtensionRuntimeManager {
       };
     };
 
-    const isCapabilityEnabled = (capability: ExtensionCapability): boolean => {
-      if (!isExperimentalFeatureEnabled("extension_permission_gates")) {
-        return true;
-      }
-
-      return isExtensionCapabilityAllowed(entry.permissions, capability);
-    };
+    const isCapabilityEnabled = (capability: ExtensionCapability): boolean =>
+      isExtensionCapabilityAllowed(entry.permissions, capability);
 
     const formatCapabilityError = (capability: ExtensionCapability): string => {
       const capabilityLabel = describeExtensionCapability(capability);
       return (
         `Permission denied for extension "${entry.name}": cannot ${capabilityLabel}. `
-        + "Disable /experimental extension-permissions or adjust extension permissions."
+        + "Grant it in Settings → Plugins → this extension → Permissions."
       );
     };
 
@@ -975,6 +999,12 @@ export class ExtensionRuntimeManager {
 
     try {
       if (state.runtimeMode === "sandbox-iframe") {
+        // The sandbox imports module specifiers itself, so apply the same
+        // source policy (remote URL opt-in) the host loader applies.
+        if (entry.source.kind === "module") {
+          assertExtensionModuleSourceAllowed(entry.source.specifier);
+        }
+
         const source = entry.source.kind === "inline"
           ? {
             kind: "inline" as const,
@@ -1066,6 +1096,7 @@ export class ExtensionRuntimeManager {
 
     try {
       clearExtensionWidgets(state.entryId);
+      dismissLegacyWidgetOwnedBy(state.entryId);
     } catch (error) {
       failures.push(getRuntimeManagerErrorMessage(error));
     }
