@@ -129,7 +129,13 @@ export function normalizeGatewayContextWindow(contextWindow: number | null | und
 
 export function normalizeGatewayMaxTokens(maxTokens: number | null | undefined, contextWindow = Number.POSITIVE_INFINITY): number {
   const value = maxTokens ?? Math.min(DEFAULT_OPENAI_GATEWAY_MAX_TOKENS, contextWindow);
-  if (!Number.isInteger(value) || value < 1 || value > contextWindow) {
+  if (!Number.isInteger(value)) {
+    throw new Error(t("custom-gateway.error.maxTokensWhole"));
+  }
+  if (value < 1) {
+    throw new Error(t("custom-gateway.error.maxTokensMin"));
+  }
+  if (value > contextWindow) {
     throw new Error("Max output tokens must be a whole number between 1 and Max context tokens.");
   }
   return value;
