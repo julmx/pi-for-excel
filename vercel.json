@@ -1,8 +1,18 @@
 {
   "buildCommand": "npm run build",
   "ignoreCommand": "node scripts/vercel-ignore-command.mjs",
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  },
   "outputDirectory": "dist",
   "rewrites": [
+    {
+      "source": "/model-catalog/:version([0-9][0-9a-z.+-]*)/:provider([a-z0-9-]+)",
+      "destination": "https://pi.dev/api/models/providers/:provider?types=chat&pi-version=:version"
+    },
     {
       "source": "/proxy",
       "destination": "/proxy.sh"
@@ -25,6 +35,15 @@
     }
   ],
   "headers": [
+    {
+      "source": "/model-catalog/:path*",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "max-age=1800"
+        }
+      ]
+    },
     {
       "source": "/proxy",
       "headers": [

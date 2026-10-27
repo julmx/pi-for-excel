@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Prepare an Amp orb: install npm dependencies so the dev server, checks,
+# tests, and build run. The dev server itself is declared in .amp/services.yaml.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+step() {
+  local label="$1"
+  shift
+  local start=$SECONDS
+  echo "==> $label"
+  "$@"
+  echo "<== $label ($((SECONDS - start))s)"
+}
+
+# npm ci always wipes and reinstalls node_modules (~20s); skip it when a
+# restored snapshot was installed from the same lockfile and Node version.
+stamp=node_modules/.orb-setup-stamp
+want="$(node --version) $(sha256sum package-lock.json | cut -d' ' -f1)"
+if [[ -f $stamp && "$(cat "$stamp")" == "$want" ]]; then
+  echo "==> node_modules matches package-lock.json; skipping npm ci"
+else
+  step "npm ci" npm ci --no-audit --no-fund
+  echo "$want" > "$stamp"
+fi
+
+# Browser tests (npm run test:browser) use Playwright's Chromium.
+step "playwright chromium" npx --no-install playwright install chromium
+
+# Trusted https://localhost for the dev server (:3141) and CORS proxy (:3003),
+# which Excel on the web needs (docs/orb-excel-web.md). Vite and the proxy
+# switch to HTTPS when key.pem/cert.pem exist (both gitignored).
+dev_certs() {
+  local dir="$HOME/.office-addin-dev-certs" nssdb="$HOME/.pki/nssdb"
+  [[ -f $dir/localhost.crt ]] || npx --no-install office-addin-dev-certs install --days 3650
+  command -v certutil >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libnss3-tools; }
+  mkdir -p "$nssdb"
+  [[ -f $nssdb/cert9.db ]] || certutil -d "sql:$nssdb" -N --empty-password
+  certutil -d "sql:$nssdb" -A -t "C,," -n office-addin-dev-ca -i "$dir/ca.crt"
+  ln -sf "$dir/localhost.key" key.pem
+  ln -sf "$dir/localhost.crt" cert.pem
+}
+step "localhost dev certs" dev_certs

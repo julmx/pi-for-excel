@@ -10,6 +10,7 @@ import { initAppStorage } from "../src/storage/init-app-storage.ts";
 import type { StorageBackend, StorageTransaction } from "../src/storage/local/types.ts";
 import type { ActionQueue } from "../src/taskpane/action-queue.ts";
 import type { QueueDisplay } from "../src/taskpane/queue-display.ts";
+import { createTabState } from "../src/taskpane/tab-state.ts";
 import {
   SessionRuntimeManager,
   type SessionRuntime,
@@ -84,7 +85,8 @@ class MemoryStorageBackend implements StorageBackend {
 const actionQueue: ActionQueue = {
   enqueuePrompt: () => {},
   enqueueCommand: () => {},
-  drainQueuedActions: () => [],
+  editLast: () => false,
+  stop: () => ({ texts: [], cancelledCommands: [] }),
   isBusy: () => false,
   shutdown: () => {},
 };
@@ -94,6 +96,9 @@ function createQueueDisplay(): QueueDisplay {
     add: () => {},
     clear: () => {},
     drainQueuedMessages: () => [],
+    removeQueuedMessage: () => {},
+    setRowHandlers: () => {},
+    lastEditableRow: () => null,
     setActionQueue: () => {},
     attach: () => {},
     detach: () => {},
@@ -127,7 +132,7 @@ function createEnvironment(backend: StorageBackend): RuntimeEnvironment {
       agent,
       sessions,
       settings,
-      models,
+      resolveModel: (persisted) => models.getModel(persisted.provider, persisted.id),
       autoRestoreLatest,
       spreadsheetHost: {
         getWorkbookContext: () => Promise.resolve({
@@ -145,6 +150,7 @@ function createEnvironment(backend: StorageBackend): RuntimeEnvironment {
       agent,
       actionQueue,
       queueDisplay: createQueueDisplay(),
+      tab: createTabState(),
       persistence,
       lockState: "idle",
       refreshCapabilities: () => Promise.resolve(),
@@ -191,7 +197,6 @@ void test("in-place model switch keeps the session and restores its selected mod
   const result = await environment.manager.selectModel({
     runtimeId: original.runtimeId,
     nextModel: getBuiltinModel("openai-codex", "gpt-5.6-sol"),
-    behavior: "inPlace",
   });
   assert.equal(result.outcome, "updated");
   original.dispose();
@@ -202,28 +207,29 @@ void test("in-place model switch keeps the session and restores its selected mod
   assert.match(JSON.stringify(restarted.agent.state.messages), /original question/u);
 });
 
-void test("fork model switch preserves the source session and restores a new selected-model session", async () => {
+void test("busy model selection stays in place, last choice wins and survives restart", async () => {
   const environment = createEnvironment(new MemoryStorageBackend());
   const original = await seedConversation(environment);
   const originalSessionId = original.persistence.getSessionId();
+  original.actionQueue = { ...original.actionQueue, isBusy: () => true };
 
   const result = await environment.manager.selectModel({
     runtimeId: original.runtimeId,
     nextModel: getBuiltinModel("openai-codex", "gpt-5.6-sol"),
-    behavior: "fork",
   });
-  assert.equal(result.outcome, "forked");
-  if (result.outcome !== "forked") return;
-  const forkSessionId = result.runtime.persistence.getSessionId();
-  assert.notEqual(forkSessionId, originalSessionId);
+  assert.equal(result.outcome, "next_turn");
+  await environment.manager.selectModel({
+    runtimeId: original.runtimeId,
+    nextModel: getBuiltinModel("openai", "gpt-4.1"),
+  });
+  assert.equal(environment.manager.snapshotTabs().length, 1);
+  assert.equal(original.persistence.getSessionId(), originalSessionId);
   original.dispose();
-  result.runtime.dispose();
 
-  const restartedSource = await restartSession(environment, originalSessionId);
-  const restartedFork = await restartSession(environment, forkSessionId);
-  assert.equal(restartedSource.agent.state.model.provider, "openai");
-  assert.equal(restartedFork.agent.state.model.provider, "openai-codex");
-  assert.match(JSON.stringify(restartedFork.agent.state.messages), /original question/u);
+  const restarted = await restartSession(environment, originalSessionId);
+  assert.equal(restarted.agent.state.model.id, "gpt-4.1");
+  assert.equal(restarted.agent.state.thinkingLevel, "off");
+  assert.match(JSON.stringify(restarted.agent.state.messages), /original question/u);
 });
 
 void test("re-selecting the same model with changed metadata updates and persists the session", async () => {
@@ -240,7 +246,6 @@ void test("re-selecting the same model with changed metadata updates and persist
   const result = await environment.manager.selectModel({
     runtimeId: original.runtimeId,
     nextModel: refreshed,
-    behavior: "inPlace",
   });
   assert.equal(result.outcome, "updated");
   original.dispose();

@@ -42,3 +42,5 @@ manifest.enterprise.local.xml
 
 # Downloaded Pyodide runtime and wheels (self-hosted production assets)
 public/enterprise-pyodide/
+# Amp orb portal state (generated)
+.amp/portals/

@@ -2,6 +2,10 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 
 import { assessOfficeJsCodeRisk } from "./office-js-risk.js";
 import {
+  wrapExtensionsManagerToolWithChangeGate,
+  wrapFilesToolWithChangeGate,
+} from "./local-change-gates.js";
+import {
   buildPythonBridgeGateErrorMessage,
   buildTmuxBridgeGateErrorMessage,
   defaultGetApprovedPythonBridgeUrl,
@@ -12,6 +16,8 @@ import {
 import {
   EXECUTE_OFFICE_JS_TOOL_NAME,
   EXECUTE_WPS_JS_TOOL_NAME,
+  EXTENSIONS_MANAGER_TOOL_NAME,
+  FILES_TOOL_NAME,
   PYTHON_BRIDGE_ONLY_TOOL_NAMES,
   PYTHON_FALLBACK_TOOL_NAMES,
   TMUX_TOOL_NAME,
@@ -314,12 +320,14 @@ function wrapDirectWorkbookJsToolWithHardGate(
       // workbook JS runs in the taskpane page realm, and workbook content is
       // untrusted input.
       const mode = await (dependencies.getExecutionMode?.() ?? Promise.resolve("safe" as const));
-      if (dependencies.alwaysConfirmOfficeJs || mode !== "yolo" || risk.flagged) {
-        const approved = await requestApproval(
-          risk.flagged
-            ? { ...request, riskIdentifiers: risk.identifiers }
-            : request,
-        );
+      if (dependencies.alwaysConfirmOfficeJs || mode !== "yolo" || risk.flagged || risk.destructive) {
+        const approved = await requestApproval({
+          ...request,
+          ...(risk.flagged ? { riskIdentifiers: risk.identifiers } : {}),
+          ...(risk.destructive ? { destructive: true } : {}),
+          ...(signal ? { signal } : {}),
+        });
+        throwIfAborted(signal);
         if (!approved) {
           throw new Error(`${apiName} execution cancelled by user.`);
         }
@@ -333,7 +341,7 @@ function wrapDirectWorkbookJsToolWithHardGate(
 
 function createPythonBridgeApprover(
   dependencies: ExperimentalToolGateDependencies,
-): (toolName: string, bridgeUrl: string, params: unknown) => Promise<void> {
+): (toolName: string, bridgeUrl: string, params: unknown, signal: AbortSignal | undefined) => Promise<void> {
   const requestApproval = dependencies.requestPythonBridgeApproval ?? defaultRequestPythonBridgeApproval;
   const getApprovedBridgeUrl =
     dependencies.getApprovedPythonBridgeUrl
@@ -342,7 +350,7 @@ function createPythonBridgeApprover(
     dependencies.setApprovedPythonBridgeUrl
     ?? defaultSetApprovedPythonBridgeUrl;
 
-  return async (toolName: string, bridgeUrl: string, params: unknown): Promise<void> => {
+  return async (toolName: string, bridgeUrl: string, params: unknown, signal: AbortSignal | undefined): Promise<void> => {
     const cachedApprovalUrl = await getApprovedBridgeUrl();
     if (cachedApprovalUrl === bridgeUrl) {
       return;
@@ -352,7 +360,9 @@ function createPythonBridgeApprover(
       toolName,
       bridgeUrl,
       params,
+      ...(signal ? { signal } : {}),
     });
+    throwIfAborted(signal);
     if (!approved) {
       throw new Error("Python/LibreOffice execution cancelled by user.");
     }
@@ -390,7 +400,7 @@ function wrapPythonToolWithOptionalBridgeApproval(
         }
 
         throwIfAborted(signal);
-        await approveBridgeUsage(tool.name, bridgeUrl, params);
+        await approveBridgeUsage(tool.name, bridgeUrl, params, signal);
       } else {
         const reason = gate.reason ?? "bridge_unreachable";
 
@@ -446,7 +456,7 @@ function wrapPythonBridgeOnlyToolWithApprovalGate(
       }
 
       throwIfAborted(signal);
-      await approveBridgeUsage(tool.name, bridgeUrl, params);
+      await approveBridgeUsage(tool.name, bridgeUrl, params, signal);
 
       throwIfAborted(signal);
       return tool.execute(toolCallId, params, signal, onUpdate);
@@ -468,7 +478,9 @@ function wrapPythonBridgeOnlyToolWithApprovalGate(
  *   call in Confirm mode. In Auto mode, pure host JSAPI code runs without a
  *   prompt, but code referencing ambient browser authority (network, storage,
  *   globals, dynamic evaluation) still requires per-call approval.
- * - `files` has no gate — read, write, and delete are always available.
+ * - `files` asks in both modes before deleting/overwriting a file Pi did not
+ *   create in this chat. Extensions ask for every Confirm change; Auto asks
+ *   before install/enable/uninstall (`local-change-gates.ts`).
  */
 export function applyExperimentalToolGates(
   tools: AgentTool[],
@@ -494,6 +506,16 @@ export function applyExperimentalToolGates(
 
     if (tool.name === EXECUTE_WPS_JS_TOOL_NAME) {
       gatedTools.push(wrapDirectWorkbookJsToolWithHardGate(tool, dependencies, "WPS JSAPI"));
+      continue;
+    }
+
+    if (tool.name === FILES_TOOL_NAME) {
+      gatedTools.push(wrapFilesToolWithChangeGate(tool, dependencies));
+      continue;
+    }
+
+    if (tool.name === EXTENSIONS_MANAGER_TOOL_NAME) {
+      gatedTools.push(wrapExtensionsManagerToolWithChangeGate(tool, dependencies));
       continue;
     }
 

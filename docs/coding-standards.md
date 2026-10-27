@@ -7,9 +7,9 @@ This document is the standards router. Keep `AGENTS.md` short; load the relevant
 
 ## Core principles
 
-- Prefer deterministic guardrails over prompt-only taste. If agents repeat a mistake, promote the rule into ESLint, TypeScript, a focused check script, or a test.
+- Prefer deterministic guardrails over prompt-only taste. If agents repeat a mistake, promote the rule into Oxlint, TypeScript, a focused check script, or a test.
 - Keep boundary uncertainty at the boundary. Parse/refine external values before passing them into core logic.
-- Preserve strictness. Do not weaken TypeScript, ESLint, tests, origin allowlists, prompt-cache invariants, or security checks to make a change pass.
+- Preserve strictness. Do not weaken TypeScript, Oxlint, tests, origin allowlists, prompt-cache invariants, or security checks to make a change pass.
 - Verify through the real seam the user depends on: tool API, taskpane UI, bridge endpoint, Office/WPS host, or persisted store.
 - Keep context progressively disclosed: `AGENTS.md` maps to this file and to domain docs instead of becoming a giant manual.
 
@@ -23,8 +23,8 @@ Deterministic checks enforce the sharpest rules:
 - Do not add generic object/record guards (`isRecord`, `isPlainObject`, `is…PayloadShape`); an object check alone does not establish a domain contract. Parse the domain shape, ideally with a TypeBox schema and `Static<>` so the type and the check cannot drift.
 - Burn-down: `npm run check:unknown-burndown` runs the anti-slop `no-unknown-*` rules and fails if the count of `unknown` parameters/returns/aliases in `src` rises above the baseline in `scripts/check-unknown-burndown.mjs` (461 when the aliases were deleted on 2026-09-10; `rg -c '\\bunknown\\b' src` gave 1,071 mentions and 233 hand-written guards). Lower the baseline as you go. The per-area plan is in `docs/clean-base-followups.md`.
 - `@ts-ignore` and `@ts-nocheck` are banned. `@ts-expect-error` requires a real explanation.
-- ESLint disable comments must name specific rules and explain the local safety/interop invariant. Do not add blanket safety comments.
-- Top-level exported APIs and public methods should expose clear contracts. Add return types when inference obscures the contract for future agents.
+- `oxlint-disable` comments must name specific rules and explain the local safety/interop invariant (`npm run check:lint-comments`). Do not add blanket safety comments.
+- Top-level exported APIs and public methods should expose clear contracts. Exported top-level functions in `src` must declare return types (`pi-for-excel/exported-function-return-types`).
 
 Prefer:
 
@@ -54,7 +54,7 @@ Boundary input includes JSON, `Response.json()`, Office.js/WPS host objects, bri
 Rules:
 
 - Decoded JSON/fetch payloads first land as `unknown` (or `JsonValue` when the protocol is JSON), then a concrete parser returns the app type.
-- Do not cast `JSON.parse(...)` or `response.json()` directly to app/domain/test types. The `check:boundary-casts` script enforces this.
+- Do not cast `JSON.parse(...)` or `response.json()` directly to app/domain/test types. The `pi-for-excel/no-typed-json-boundary-cast` lint rule enforces this.
 - A successful parse returns the refined value; do not validate and then keep passing the unrefined object.
 - Keep protocol DTOs, persistence records, and domain/service values distinct even when their shapes look similar.
 - Mutating command/request parsers should reject misspelled or obsolete fields unless the sub-object is explicitly extensible.
@@ -120,8 +120,37 @@ The repo enables both `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes
 
 Before opening a PR, report:
 
+- For visible behaviour changes, attach a screenshot or short video to the PR (`gh pr create/comment ... --attach`, GitHub CLI 2.99+; see [orb recording](./orb-excel-web.md#record-pr-evidence)).
 - Which standards surfaces were touched.
 - Which deterministic checks/tests were run.
 - Any lint/type/test warnings left intentionally.
 - Any `unknown` that travels past the seam and why it cannot be parsed closer to it.
 - Any safety helper usage (`setSafeInnerHTML`, lint disable, type assertion) and the local invariant that makes it safe.
+
+## Review
+
+One independent review per PR, at the end, once the checks pass and acceptance is done. Give a reviewer with fresh context (a review subagent or an orb) the diff, the goal and this brief:
+
+> Review and simplify this for excessive defensiveness, verbosity and gross code. Reduce code without golfing.
+>
+> Reduce complexity:
+> - Make impossible states unrepresentable in types and data shapes
+> - Keep types narrow: parse outside input once at the boundary, don't widen to unknown/any/broad records, remove casts you can't justify
+> - Ensure deep modules: prefer one small interface over many shallow helpers. Co-optimise multi-consumer functions with their callers. Inline every function used only once and tighten its former call sites.
+>
+> Remove:
+> - Checks for impossible states; replace complex error handling with plain asserts. You can selectively keep guards before irreversible actions.
+> - Stale or redundant code
+>
+> Improve code style:
+> - Make code clearer rather than adding comments
+> - Reduce nesting by merging and inverting conditionals
+>
+> Tests:
+> - Test through the public interface, not the implementation
+> - Delete tests that could not fail against a real bug: ones that restate a constant or the implementation, read source text, or mock away the behaviour under test
+> - Delete tests for states that cannot happen
+>
+> Finish by listing what you changed and, only if relevant, a finding worth turning into a lint rule or check.
+
+Fix what the review raises and rerun the checks. Repeat the Excel acceptance run only when a fix could invalidate its evidence. Re-review only when the review raised a blocker whose fix is itself non-trivial; do not run second, final or confirmation passes.

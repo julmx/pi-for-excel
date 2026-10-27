@@ -7,7 +7,8 @@ This folder contains **current** docs that should match shipped behavior.
 - [Deploy hosted build on Vercel](./deploy-vercel.md)
 - [Org-hosted central CORS proxy](./central-proxy.md)
 - [Dev server behind portless (opt-in)](./portless.md)
-- [Release notes (`v0.10.0-pre`)](./release-notes/v0.10.0-pre.md)
+- [Developing in Amp orbs with Excel on the web](./orb-excel-web.md)
+- [Release notes (`v0.12.0-pre`)](./release-notes/v0.12.0-pre.md)
 - [Release smoke test checklist](./release-smoke-test-checklist.md)
 - [Adversarial extension-provider smoke](./adversarial-extension-provider-smoke.md)
 - [Release smoke run logs](./release-smoke-runs/README.md)
@@ -18,6 +19,7 @@ This folder contains **current** docs that should match shipped behavior.
 - [Agent Skills interop (skills vs integrations)](./agent-skills-interop.md)
 - [Compaction (`/compact`)](./compaction.md)
 - [Manual full-workbook backups (`/backup`)](./manual-full-backups.md)
+- [Automatic backup storage, migration and measured limits](./recovery-storage.md)
 - [WPS Spreadsheets support plan](./wps-support.md)
 
 ## Proposals

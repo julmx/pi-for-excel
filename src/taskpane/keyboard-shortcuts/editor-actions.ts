@@ -1,242 +1,104 @@
 /**
- * Editor-focused keyboard actions (slash commands + streaming steer/follow-up).
+ * What a submitted composer draft becomes. Enter, Alt+Enter, the send button
+ * and a command chosen from the menu all come through here, so they behave
+ * the same.
  */
 
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 
-import type { PiSidebar } from "../../ui/pi-sidebar.js";
 import { showToast } from "../../ui/toast.js";
 import { t } from "../../language/index.js";
 import { hideCommandMenu } from "../../commands/command-menu.js";
 import { executeSlashCommand } from "../../commands/slash-command-execution.js";
+import type { ActionQueue } from "../action-queue.js";
+import type { QueueDisplay } from "../queue-display.js";
+import type { TabState } from "../tab-state.js";
 
-export type QueuedEditorMessage = {
-  type: "steer" | "follow-up";
+export interface SubmitTarget {
+  agent: Agent;
+  actionQueue: Pick<ActionQueue, "enqueuePrompt" | "enqueueCommand" | "isBusy">;
+  queueDisplay: Pick<QueueDisplay, "add">;
+  tab?: Pick<TabState, "attachments" | "setAttachments">;
+}
+
+/**
+ * Handles a submitted draft for the active tab. Returns true when the draft
+ * was used (the composer clears) and false when it stays for editing.
+ *
+ * - A leading `/` names a command. Known commands run (or are queued, for
+ *   `/compact`) under the busy policy; a refused or unknown command keeps the
+ *   draft and says why. A leading space sends slash text as a message.
+ * - While Pi responds, Enter steers and Alt+Enter follows up.
+ * - While the tab is busy otherwise (compacting, waiting to retry), the text
+ *   is queued; when idle it is sent.
+ */
+export function submitComposerText(args: {
   text: string;
-};
-
-export type QueueDisplay = {
-  add: (type: "steer" | "follow-up", text: string) => void;
-  drainQueuedMessages: () => QueuedEditorMessage[];
-};
-
-export type QueuedEditorAction =
-  | { type: "prompt"; text: string }
-  | { type: "command"; name: string; args: string };
-
-export type ActionQueue = {
-  enqueueCommand: (name: string, args: string) => void;
-  drainQueuedActions: () => QueuedEditorAction[];
-  isBusy: () => boolean;
-};
-
-interface SidebarInputHost {
-  getInput: () => { value: string } | undefined;
-  getTextarea: () => HTMLTextAreaElement | undefined;
-}
-
-function mergeQueuedAndCurrentText(queuedTexts: string[], currentText: string): string {
-  return [...queuedTexts, currentText]
-    .filter((text) => text.trim().length > 0)
-    .join("\n\n");
-}
-
-export function restoreQueuedMessagesToEditor(args: {
-  sidebar: SidebarInputHost;
-  textarea: HTMLTextAreaElement | undefined;
-  agent: Agent | null;
-  queueDisplay: QueueDisplay | null;
-  actionQueue: ActionQueue | null;
-  requeueCommands?: boolean;
-}): number {
-  const {
-    sidebar,
-    textarea,
-    agent,
-    queueDisplay,
-    actionQueue,
-    requeueCommands = true,
-  } = args;
-
-  const queuedMessages = queueDisplay?.drainQueuedMessages() ?? [];
-  if (queuedMessages.length > 0) {
-    agent?.clearAllQueues();
-  }
-
-  const queuedActions = actionQueue?.drainQueuedActions() ?? [];
-  const queuedPromptTexts: string[] = [];
-  const queuedCommands: Array<{ name: string; args: string }> = [];
-
-  for (const action of queuedActions) {
-    if (action.type === "prompt") {
-      queuedPromptTexts.push(action.text);
-      continue;
-    }
-
-    queuedCommands.push({ name: action.name, args: action.args });
-  }
-
-  if (requeueCommands && actionQueue) {
-    for (const command of queuedCommands) {
-      actionQueue.enqueueCommand(command.name, command.args);
-    }
-  }
-
-  const queuedTexts = [
-    ...queuedMessages.map((message) => message.text),
-    ...queuedPromptTexts,
-  ];
-
-  if (queuedTexts.length === 0) {
-    return 0;
-  }
-
-  const input = sidebar.getInput();
-  const currentText = textarea?.value ?? input?.value ?? "";
-  const mergedText = mergeQueuedAndCurrentText(queuedTexts, currentText);
-
-  if (input) {
-    input.value = mergedText;
-  } else if (textarea) {
-    textarea.value = mergedText;
-  }
-
-  const activeTextarea = sidebar.getTextarea() ?? textarea;
-  if (activeTextarea) {
-    if (typeof activeTextarea.focus === "function") {
-      activeTextarea.focus();
-    }
-
-    if (typeof activeTextarea.setSelectionRange === "function") {
-      const cursor = activeTextarea.value.length;
-      activeTextarea.setSelectionRange(cursor, cursor);
-    }
-  }
-
-  return queuedTexts.length;
-}
-
-export function handleSlashCommandExecution(args: {
-  event: KeyboardEvent;
-  textarea: HTMLTextAreaElement | undefined;
-  isInEditor: boolean;
-  isStreaming: boolean;
-  getActiveActionQueue: () => ActionQueue | null;
-  sidebar: PiSidebar;
+  followUp: boolean;
+  target: SubmitTarget | null;
 }): boolean {
-  const {
-    event,
-    textarea,
-    isInEditor,
-    isStreaming,
-    getActiveActionQueue,
-    sidebar,
-  } = args;
+  const { followUp, target } = args;
+  let text = args.text.trim();
+  if (!text && !target?.tab?.attachments.length) return false;
 
-  if (
-    !isInEditor
-    || !textarea
-    || event.key !== "Enter"
-    || event.shiftKey
-    || !textarea.value.startsWith("/")
-  ) {
-    return false;
-  }
-
-  const val = textarea.value.trim();
-  const spaceIdx = val.indexOf(" ");
-  const cmdName = spaceIdx > 0 ? val.slice(1, spaceIdx) : val.slice(1);
-  const argsText = spaceIdx > 0 ? val.slice(spaceIdx + 1) : "";
-  const actionQueue = getActiveActionQueue();
-  const busy = isStreaming || actionQueue?.isBusy() === true;
-
-  const result = executeSlashCommand({
-    name: cmdName,
-    args: argsText,
-    busy,
-    ...(actionQueue
-      ? {
-        enqueueCommand: (name: string, args: string) => {
-          actionQueue.enqueueCommand(name, args);
-        },
-      }
-      : {}),
-    beforeExecute: () => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      hideCommandMenu();
-
-      const input = sidebar.getInput();
-      if (input) input.clear();
-    },
-    onError: () => {
-      showToast(t("slash-command.toast.failed"));
-    },
-  });
-
-  if (result === "not-found") {
-    return false;
-  }
-
-  if (result === "busy-blocked") {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    showToast(t("shortcuts.toast.cantRunBusy", { command: cmdName }));
-    return true;
-  }
-
-  if (result === "missing-queue") {
+  if (!target) {
     showToast(t("editor-actions.toast.noActiveSession"));
-    return true;
-  }
-
-  return true;
-}
-
-export function handleStreamingSteerOrFollowUp(args: {
-  event: KeyboardEvent;
-  textarea: HTMLTextAreaElement | undefined;
-  isInEditor: boolean;
-  isStreaming: boolean;
-  agent: Agent | null;
-  getActiveQueueDisplay: () => QueueDisplay | null;
-  sidebar: PiSidebar;
-}): boolean {
-  const {
-    event,
-    textarea,
-    isInEditor,
-    isStreaming,
-    agent,
-    getActiveQueueDisplay,
-    sidebar,
-  } = args;
-
-  if (!isInEditor || !textarea || event.key !== "Enter" || event.shiftKey || !isStreaming || !agent) {
     return false;
   }
 
-  const text = textarea.value.trim();
-  if (!text) return false;
+  const { agent, actionQueue, queueDisplay } = target;
+  const isStreaming = agent.state.isStreaming;
 
-  event.preventDefault();
-  event.stopImmediatePropagation();
+  if (args.text.startsWith("/")) {
+    const spaceIdx = text.search(/\s/u);
+    const name = spaceIdx > 0 ? text.slice(1, spaceIdx) : text.slice(1);
+    const commandArgs = spaceIdx > 0 ? text.slice(spaceIdx + 1).trim() : "";
 
-  const msg: AgentMessage = {
-    role: "user",
-    content: [{ type: "text", text }],
-    timestamp: Date.now(),
-  };
+    const result = executeSlashCommand({
+      name,
+      args: commandArgs,
+      busy: isStreaming || actionQueue.isBusy(),
+      enqueueCommand: actionQueue.enqueueCommand,
+      beforeExecute: hideCommandMenu,
+      onError: () => {
+        showToast(t("slash-command.toast.failed"));
+      },
+    });
 
-  if (event.altKey) {
-    agent.followUp(msg);
-    getActiveQueueDisplay()?.add("follow-up", text);
-  } else {
-    agent.steer(msg);
-    getActiveQueueDisplay()?.add("steer", text);
+    if (result === "not-found") {
+      showToast(t("turn.toast.unknownCommand", { command: name }));
+      return false;
+    }
+    if (result === "busy-blocked") {
+      showToast(t("shortcuts.toast.cantRunBusy", { command: name }));
+      return false;
+    }
+    return true;
   }
 
-  const input = sidebar.getInput();
-  if (input) input.clear();
+  const paths = target.tab?.attachments ?? [];
+  if (paths.length > 0) {
+    text = [text, `Attached files in Files (read these as part of this message): ${paths.map((path) => JSON.stringify(path)).join(", ")}`].filter(Boolean).join("\n\n");
+  }
+
+  if (isStreaming) {
+    const message: AgentMessage = {
+      role: "user",
+      content: [{ type: "text", text }],
+      timestamp: Date.now(),
+    };
+    if (followUp) {
+      agent.followUp(message);
+      queueDisplay.add("follow-up", text, message);
+    } else {
+      agent.steer(message);
+      queueDisplay.add("steer", text, message);
+    }
+    target.tab?.setAttachments([]);
+    return true;
+  }
+
+  actionQueue.enqueuePrompt(text);
+  target.tab?.setAttachments([]);
   return true;
 }

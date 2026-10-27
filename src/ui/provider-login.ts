@@ -8,13 +8,25 @@
  */
 
 import { getAppStorage } from "../storage/local/app-storage.js";
-import { isCorsError } from "../auth/cors-error.js";
+import { checkProviderApiKey } from "../auth/api-key-check.js";
+import { showToast } from "./toast.js";
+import { isMacPlatform, isWindowsPlatform } from "../utils/platform.js";
+
+/** Where the user runs the proxy helper, named for their platform. */
+function terminalAppName(): string {
+  if (isMacPlatform()) return t("platform.terminal.mac");
+  if (isWindowsPlatform()) return t("platform.terminal.windows");
+  return t("platform.terminal.other");
+}
+import { isCorsError, isModuleLoadError } from "../auth/cors-error.js";
+import { checkProxyOnce, isProxyBlockedByBrowser } from "../taskpane/proxy-status.js";
 import { pollOAuthCallbackCapture } from "../auth/oauth-callback-capture.js";
 import { getOAuthProvider } from "../auth/oauth-provider-registry.js";
 import { clearOAuthCredentials, saveOAuthCredentials } from "../auth/oauth-storage.js";
 import {
   DEFAULT_PROXY_IS_REMOTE,
   DEFAULT_PROXY_URL,
+  PROXY_HELPER_COMMAND,
   PROXY_HELPER_DOCS_URL,
   probeProxyReachability,
   resolveConfiguredProxyUrl,
@@ -70,7 +82,7 @@ function showProxyGateDialog(): Promise<boolean> {
     message.style.lineHeight = "1.5";
     message.textContent = DEFAULT_PROXY_IS_REMOTE
       ? t("provider.proxy_gate.message_remote")
-      : t("provider.proxy_gate.message");
+      : t("provider.proxy_gate.message", { terminal: terminalAppName() });
 
     const codeRow = document.createElement("div");
     codeRow.style.cssText = "display:flex;align-items:center;gap:8px;margin:12px 0;";
@@ -80,14 +92,14 @@ function showProxyGateDialog(): Promise<boolean> {
       "flex:1;padding:8px 10px;border-radius:6px;" +
       "background:var(--pi-code-bg, #1e1e1e);color:var(--pi-code-fg, #d4d4d4);" +
       "font-size:13px;font-family:var(--pi-monospace, monospace);user-select:all;";
-    codeEl.textContent = "npx pi-for-excel-proxy";
+    codeEl.textContent = PROXY_HELPER_COMMAND;
 
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.textContent = t("provider.proxy_gate.copy");
     copyBtn.style.cssText = "padding:6px 12px;border-radius:6px;font-size:13px;cursor:pointer;";
     copyBtn.addEventListener("click", () => {
-      void navigator.clipboard.writeText("npx pi-for-excel-proxy").then(() => {
+      void navigator.clipboard.writeText(PROXY_HELPER_COMMAND).then(() => {
         copyBtn.textContent = t("provider.proxy_gate.copied");
         setTimeout(() => { copyBtn.textContent = t("provider.proxy_gate.copy"); }, 1500);
       });
@@ -104,7 +116,7 @@ function showProxyGateDialog(): Promise<boolean> {
     } else {
       setSafeInnerHTML(
         hint,
-        `${escapeHtml(t("provider.proxy_gate.hint_html"))} ` +
+        `${escapeHtml(t("provider.proxy_gate.hint_html", { terminal: terminalAppName() }))} ` +
           `<a href="${escapeAttr(PROXY_HELPER_DOCS_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("provider.proxy_gate.guide"))}</a>`,
         "proxy gate helper link markup with escaped localized text",
       );
@@ -166,7 +178,7 @@ function showProxyGateDialog(): Promise<boolean> {
         } else {
           setSafeInnerHTML(
             hint,
-            `${escapeHtml(t("provider.proxy_gate.not_detected_html"))} ` +
+            `${escapeHtml(t("provider.proxy_gate.not_detected_html", { terminal: terminalAppName() }))} ` +
               `<a href="${escapeAttr(PROXY_HELPER_DOCS_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("provider.proxy_gate.guide"))}</a>`,
             "proxy retry helper link markup with escaped localized text",
           );
@@ -214,7 +226,13 @@ export interface ProviderDef {
 }
 
 export const ALL_PROVIDERS: ProviderDef[] = [
-  // OAuth providers first (subscription / account-based flows)
+  // No-helper API key options first; subscription flows remain available below.
+  { id: "openai", label: /* brand */ "OpenAI (API)", desc: "provider.desc.api_key" },
+  { id: "google", label: /* brand */ "Google Gemini (API)", desc: "provider.desc.api_key" },
+  { id: "deepseek", label: /* brand */ "DeepSeek" },
+  { id: "mistral", label: /* brand */ "Mistral" },
+  { id: "groq", label: /* brand */ "Groq" },
+  { id: "xai", label: /* brand */ "xAI / Grok" },
   // Only list flows that are supported in-browser (PKCE with proxy-assisted or manual callback handling).
   // desc holds a locale key (resolved via t() at render time in buildProviderRow).
   { id: "anthropic",          label: /* brand */ "Anthropic",                oauth: "anthropic",          desc: "provider.desc.claude" },
@@ -223,14 +241,8 @@ export const ALL_PROVIDERS: ProviderDef[] = [
   { id: "google-antigravity", label: /* brand */ "Google Antigravity",       oauth: "google-antigravity", desc: "provider.desc.antigravity" },
   { id: "github-copilot",     label: /* brand */ "GitHub Copilot",           oauth: "github-copilot" },
 
-  // API key providers
-  { id: "openai",             label: /* brand */ "OpenAI (API)",             desc: "provider.desc.api_key" },
-  { id: "google",             label: /* brand */ "Google Gemini (API)",      desc: "provider.desc.api_key" },
-  { id: "deepseek",           label: /* brand */ "DeepSeek" },
+  // Bedrock requires AWS credentials rather than a browser API key.
   { id: "amazon-bedrock",     label: /* brand */ "Amazon Bedrock" },
-  { id: "mistral",            label: /* brand */ "Mistral" },
-  { id: "groq",               label: /* brand */ "Groq" },
-  { id: "xai",                label: /* brand */ "xAI / Grok" },
 ];
 
 /**
@@ -360,7 +372,10 @@ function normalizeApiKeyForProvider(
  * Copilot). The login flow keeps polling in the background, so the dialog
  * only informs the user; the caller closes it when login settles.
  */
-function showDeviceCodeDialog(info: { userCode: string; verificationUri: string }): () => void {
+function showDeviceCodeDialog(
+  info: { userCode: string; verificationUri: string },
+  onClose: () => void,
+): () => void {
   closeOverlayById(PROVIDER_PROMPT_OVERLAY_ID);
 
   const dialog = createOverlayDialog({
@@ -405,6 +420,9 @@ function showDeviceCodeDialog(info: { userCode: string; verificationUri: string 
   helper.textContent = t("provider.device_code.helper", { uri: info.verificationUri });
 
   dialog.card.append(title, message, codeRow, helper);
+  // Closing the dialog (Escape, ×, backdrop) cancels the login instead of
+  // leaving it polling in the background.
+  dialog.addCleanup(onClose);
   dialog.mount();
 
   return () => dialog.close();
@@ -757,7 +775,10 @@ export function buildProviderRow(
   const row = document.createElement("div");
   row.className = "pi-login-row";
   const labelText = escapeHtml(label);
-  const descriptionMarkup = desc ? `<span class="pi-login-desc">${escapeHtml(t(desc))}</span>` : "";
+  const requirement = t(id === "amazon-bedrock"
+    ? "provider.requirement.aws"
+    : oauth ? "provider.requirement.helper" : "provider.requirement.key");
+  const descriptionMarkup = `<span class="pi-login-desc">${escapeHtml([desc ? t(desc) : "", requirement].filter(Boolean).join(" · "))}</span>`;
   const oauthMarkup = oauth
     ? `
         <button class="pi-login-oauth">${escapeHtml(t("provider.login_with", { label }))}</button>
@@ -854,6 +875,16 @@ export function buildProviderRow(
           if (!import.meta.env.DEV && OAUTH_IDS_NEEDING_PROXY.has(id)) {
             const reachable = await isProxyReachable();
             if (!reachable) {
+              // Where the browser blocks localhost (Excel on the web), the gate's
+              // "run the helper, then Retry" can never succeed: say why instead.
+              await checkProxyOnce(getAppStorage().settings);
+              if (isProxyBlockedByBrowser()) {
+                errorEl.textContent = t("proxy.blocked_by_browser");
+                errorEl.hidden = false;
+                oauthBtn.textContent = t("provider.login_with", { label });
+                oauthBtn.style.opacity = "1";
+                return;
+              }
               const userRetried = await showProxyGateDialog();
               if (!userRetried) {
                 // User cancelled — reset button and bail.
@@ -865,6 +896,7 @@ export function buildProviderRow(
           }
 
           const deviceCodeDialogRef: { close: (() => void) | null } = { close: null };
+          const loginAbort = new AbortController();
           const authUrlRef: { current: string | null } = { current: null };
 
           let cred;
@@ -881,7 +913,7 @@ export function buildProviderRow(
                 // page and show the user code to enter there.
                 const w = window.open(info.verificationUri, "_blank", "noopener,noreferrer");
                 if (w) w.opener = null;
-                deviceCodeDialogRef.close = showDeviceCodeDialog(info);
+                deviceCodeDialogRef.close = showDeviceCodeDialog(info, () => loginAbort.abort());
               },
               onSelect: (prompt) =>
                 promptForSelect({
@@ -924,7 +956,16 @@ export function buildProviderRow(
                 return value;
               },
               onProgress: (msg) => { oauthBtn.textContent = msg; },
+              signal: loginAbort.signal,
             });
+          } catch (error) {
+            if (loginAbort.signal.aborted) {
+              // The user closed the device-code dialog: the login is cancelled.
+              oauthBtn.textContent = t("provider.login_with", { label });
+              oauthBtn.style.opacity = "1";
+              return;
+            }
+            throw error;
           } finally {
             deviceCodeDialogRef.close?.();
           }
@@ -943,23 +984,29 @@ export function buildProviderRow(
           }
 
           const msg = getErrorMessage(err);
-          const isLikelyCors =
+          // The login flow's code itself could not load (GitHub Copilot's flow is not bundled for the browser).
+          const flowUnavailable = err instanceof Error && isModuleLoadError(err);
+          const isLikelyCors = !flowUnavailable && (
             isCorsError(err) ||
-            (typeof msg === "string" && /load failed|failed to fetch|cors|cross-origin|networkerror/i.test(msg));
+            (typeof msg === "string" && /load failed|failed to fetch|cors|cross-origin|networkerror/i.test(msg)));
 
           if (isLikelyCors) {
-            if (DEFAULT_PROXY_IS_REMOTE) {
+            if (isProxyBlockedByBrowser()) {
+              errorEl.textContent = t("proxy.blocked_by_browser");
+            } else if (DEFAULT_PROXY_IS_REMOTE) {
               errorEl.textContent = t("provider.cors_error_remote", { url: DEFAULT_PROXY_URL });
             } else {
               setSafeInnerHTML(
                 errorEl,
-                `${escapeHtml(t("provider.cors_error"))} <code style="padding:2px 5px;border-radius:4px;` +
+                `${escapeHtml(t("provider.cors_error", { terminal: terminalAppName() }))} <code style="padding:2px 5px;border-radius:4px;` +
                   "background:var(--pi-code-bg, #1e1e1e);color:var(--pi-code-fg, #d4d4d4)\">" +
-                  `npx pi-for-excel-proxy</code>${escapeHtml(t("provider.cors_error.retry"))} ` +
+                  `${escapeHtml(PROXY_HELPER_COMMAND)}</code>${escapeHtml(t("provider.cors_error.retry"))} ` +
                   `<a href="${escapeAttr(PROXY_HELPER_DOCS_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("provider.proxy_gate.guide"))}</a>`,
                 "provider CORS helper error markup with escaped localized text",
               );
             }
+          } else if (flowUnavailable) {
+            errorEl.textContent = t("provider.oauth.flow_unavailable", { label });
           } else {
             errorEl.textContent = msg || t("provider.login_failed");
           }
@@ -1017,11 +1064,23 @@ export function buildProviderRow(
     const key = normalized.key;
     saveBtn.textContent = t("provider.testing");
     saveBtn.style.opacity = "0.7";
+    saveBtn.disabled = true;
     errorEl.hidden = true;
     try {
+      const check = await checkProviderApiKey(id, key);
+      if (check.status === "rejected") {
+        errorEl.textContent = t("provider.key_rejected", { label, status: String(check.httpStatus) });
+        errorEl.hidden = false;
+        return;
+      }
+
       await storage.providerKeys.set(id, key);
       setConnectedState(true);
       onConnected(row, id, label);
+      // After the caller's "connected" toast, so this caveat is the one left showing.
+      if (check.status === "unverified") {
+        showToast(t("provider.key_unverified", { label }), 4000);
+      }
       detail.hidden = true;
       expandedRef.current = null;
     } catch (err) {
@@ -1031,6 +1090,7 @@ export function buildProviderRow(
     } finally {
       saveBtn.textContent = t("provider.save");
       saveBtn.style.opacity = "1";
+      saveBtn.disabled = false;
     }
   })(); });
 

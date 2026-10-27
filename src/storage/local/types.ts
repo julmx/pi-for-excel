@@ -77,11 +77,15 @@ export interface SessionMetadata {
   id: string;
   /** User-defined title or auto-generated from first message */
   title: string;
+  /** True when the user chose the title; absent on sessions saved before this was recorded. */
+  titleChosen?: boolean;
+  /** A title request was started; do not charge again after a reload or failure. */
+  titleGenerationAttempted?: boolean;
   /** ISO 8601 UTC timestamp of creation */
   createdAt: string;
   /** ISO 8601 UTC timestamp of last modification */
   lastModified: string;
-  /** Total number of messages (user + assistant + tool results) */
+  /** Visible messages (user + assistant + tool results); hidden instructions are not counted */
   messageCount: number;
   /** Cumulative usage statistics */
   usage: {
@@ -112,6 +116,13 @@ export interface SessionMetadata {
    * Tool calls and tool results are excluded.
    */
   preview: string;
+  /**
+   * Random token written with every save. A taskpane saves only over the
+   * revision it last loaded or saved, so two taskpanes with the same session
+   * open cannot silently replace each other's turns. Absent on sessions saved
+   * before revisions existed.
+   */
+  revision?: string;
 }
 
 /**
@@ -123,6 +134,10 @@ export interface SessionData {
   id: string;
   /** User-defined title or auto-generated from first message */
   title: string;
+  /** True when the user chose the title; absent on sessions saved before this was recorded. */
+  titleChosen?: boolean;
+  /** A title request was started; do not charge again after a reload or failure. */
+  titleGenerationAttempted?: boolean;
   /** Last selected model */
   model: Model<Api>;
   /** Last selected thinking level */
@@ -133,6 +148,8 @@ export interface SessionData {
   createdAt: string;
   /** ISO 8601 UTC timestamp of last modification */
   lastModified: string;
+  /** Same token as `SessionMetadata.revision`. */
+  revision?: string;
 }
 
 /**
@@ -168,7 +185,7 @@ export interface IndexConfig {
   /** Index name */
   name: string;
   /** Key path to index on */
-  keyPath: string;
+  keyPath: string | string[];
   /** Unique constraint (optional) */
   unique?: boolean;
 }

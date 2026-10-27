@@ -8,6 +8,24 @@ pi-input {
   min-width: 0;
 }
 
+.pi-input-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 40px 0;
+}
+
+.pi-input-attachment {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border-radius: var(--radius-xs);
+  padding: 3px 6px;
+  background: var(--pi-green-light);
+  color: var(--foreground);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
 .pi-input-card {
   position: relative;
   border-radius: var(--pill-radius);
@@ -104,6 +122,14 @@ pi-input {
   color: var(--foreground);
 }
 
+.dark .pi-input-btn--attach {
+  background: var(--glass-bg-solid);
+}
+
+.dark .pi-input-btn--attach:hover {
+  background: var(--accent);
+}
+
 .pi-input-btn--attach svg {
   width: 14px;
   height: 14px;
@@ -134,6 +160,20 @@ pi-input {
   transform: scale(1.05);
 }
 
+.pi-input-card.is-busy .pi-input-textarea {
+  padding-right: 82px;
+}
+
+.pi-input-card.is-busy .pi-input-btn--send {
+  right: 40px;
+}
+
+.pi-input-btn--abort:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
 @media (max-height: 520px) {
   .pi-input-textarea {
     min-height: 34px;
@@ -157,5 +197,3 @@ pi-input {
     right: 6px;
   }
 }
-
-

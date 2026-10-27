@@ -8,11 +8,13 @@
  * We route requests through a user-configured local CORS proxy when enabled.
  */
 
-import { uuidv7 } from "@earendil-works/pi-agent-core";
+import { t } from "../language/index.js";
 import {
+  createAssistantMessageEventStream,
   getCurrentSystemPrompt,
   getCurrentTools,
   hasApi,
+  uuidv7,
 } from "@earendil-works/pi-ai";
 import type {
   Api,
@@ -24,12 +26,16 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 
+import { AUTO_CONTEXT_PREFIX } from "../messages/auto-context.js";
+import { streamWithProviderFailure } from "./provider-failure.js";
 import { isDebugEnabled } from "../debug/debug.js";
 import { selectToolBundle, type ToolBundleId } from "../context/tool-disclosure.js";
 import { modelRecencyScore } from "../models/model-ordering.js";
 import { OPENAI_GATEWAY_PROVIDER_PREFIX } from "./custom-gateways.js";
 import { assertEnterpriseModelAllowed, readBuildEnterpriseModelPolicy } from "./enterprise-model-policy.js";
 import { getEnterpriseStreamBaseUrl } from "./enterprise-fetch-policy.js";
+import type { ProviderRoute } from "../models/browser-model-runtime.js";
+import { isPlainHttpRemoteEndpoint } from "./custom-gateways.js";
 import {
   createPrefixFingerprint,
   type PrefixChangeReason,
@@ -48,13 +54,16 @@ type OfficeStreamFn = (
   options?: StreamOptions,
 ) => Promise<AssistantMessageEventStream>;
 
+export type RuntimeProviderRoute = (providerId: string) => ProviderRoute | undefined;
+
 function shouldProxyProvider(
   provider: string,
   apiKey?: string,
-  isRuntimeProvider?: (providerId: string) => boolean,
+  runtimeProviderRoute?: RuntimeProviderRoute,
 ): boolean {
-  if (isRuntimeProvider?.(provider)) {
-    return true;
+  const route = runtimeProviderRoute?.(provider);
+  if (route !== undefined) {
+    return route === "proxy";
   }
 
   const p = provider.toLowerCase();
@@ -66,6 +75,7 @@ function shouldProxyProvider(
   switch (p) {
     // Known to require proxy in browser webviews (CORS blocked)
     case "openai-codex":
+    case "github-copilot":
       return true;
 
     // Anthropic OAuth tokens are blocked by CORS; some orgs also block direct browser access.
@@ -85,6 +95,16 @@ function shouldProxyProvider(
     default:
       return false;
   }
+}
+
+/**
+ * Office serves the taskpane over HTTPS, so its webview blocks plain-http requests to other
+ * machines as mixed content and pi-ai only reports "Connection error.". Explain it instead.
+ */
+function assertDirectRequestAllowed(model: Model<Api>): void {
+  if (!isPlainHttpRemoteEndpoint(model.baseUrl)) return;
+
+  throw new Error(t("custom-gateway.error.plainHttpBlocked", { provider: model.provider, url: model.baseUrl }));
 }
 
 type OfficeProxyTransport = "codex-websocket";
@@ -180,10 +200,15 @@ function normalizeGoogleOAuthModel(modelsRuntime: Models, model: Model<Api>): Mo
  * so the agent can complete multi-step tool loops in a single turn.
  */
 function isToolContinuation(messages: TranscriptContext["messages"]): boolean {
-  if (messages.length === 0) return false;
-  const last = messages[messages.length - 1];
-  if (!last) return false;
-  return last.role === "toolResult";
+  // The per-request selection note is always appended last; look past it.
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message) return false;
+    const isAutoContext = message.role === "user" && typeof message.content !== "string"
+      && message.content[0]?.type === "text" && message.content[0].text.startsWith(AUTO_CONTEXT_PREFIX);
+    if (!isAutoContext) return message.role === "toolResult";
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -565,7 +590,7 @@ function normalizeOpenRouterModel(model: Model<Api>): Model<Api> {
 export function createOfficeStreamFn(
   getProxyUrl: GetProxyUrl,
   modelsRuntime: Models,
-  isRuntimeProvider?: (providerId: string) => boolean,
+  runtimeProviderRoute?: RuntimeProviderRoute,
 ): OfficeStreamFn {
   return async (model: Model<Api>, context: TranscriptContext, options?: StreamOptions) => {
     // Validate before context processing, any proxy lookup, or network transport.
@@ -573,6 +598,34 @@ export function createOfficeStreamFn(
     if (enterprisePolicy) {
       assertEnterpriseModelAllowed(enterprisePolicy, model);
     }
+    // A tool can finish after Stop; don't send its continuation request.
+    if (options?.signal?.aborted) {
+      const stream = createAssistantMessageEventStream();
+      stream.push({
+        type: "error",
+        reason: "aborted",
+        error: {
+          role: "assistant",
+          content: [],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "aborted",
+          errorMessage: "Request aborted",
+          timestamp: Date.now(),
+        },
+      });
+      return stream;
+    }
+
     const continuation = isToolContinuation(context.messages);
     const replayedContext: Context = {
       systemPrompt: getCurrentSystemPrompt(context.messages),
@@ -628,11 +681,13 @@ export function createOfficeStreamFn(
           "Enable Proxy in Settings and run: npx -y pi-for-excel-proxy@latest",
         );
       }
-      return modelsRuntime.streamSimple(normalizedModel, context, effectiveOptions);
+      assertDirectRequestAllowed(normalizedModel);
+      return streamWithProviderFailure((requestOptions) => modelsRuntime.streamSimple(normalizedModel, context, requestOptions), effectiveOptions);
     }
 
-    if (!needsOpenRouterProxy && !shouldProxyProvider(normalizedModel.provider, options?.apiKey, isRuntimeProvider)) {
-      return modelsRuntime.streamSimple(normalizedModel, context, effectiveOptions);
+    if (!needsOpenRouterProxy && !shouldProxyProvider(normalizedModel.provider, options?.apiKey, runtimeProviderRoute)) {
+      assertDirectRequestAllowed(normalizedModel);
+      return streamWithProviderFailure((requestOptions) => modelsRuntime.streamSimple(normalizedModel, context, requestOptions), effectiveOptions);
     }
 
     // Guardrails: fail fast for known-bad proxy configs (e.g., HTTP proxy from HTTPS taskpane).
@@ -658,10 +713,10 @@ export function createOfficeStreamFn(
           transport: "sse",
         }
       : effectiveOptions;
-    return modelsRuntime.streamSimple(
+    return streamWithProviderFailure((requestOptions) => modelsRuntime.streamSimple(
       applyProxy(normalizedModel, validated, proxyTransport),
       context,
-      proxiedOptions,
-    );
+      requestOptions,
+    ), proxiedOptions);
   };
 }

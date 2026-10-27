@@ -1,6 +1,7 @@
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 
+import { resolveCustomProviderModel } from "../auth/custom-gateways.js";
 import type { CustomProvider } from "../storage/local/custom-providers-store.js";
 import { pickDefaultModel } from "../taskpane/default-model.js";
 import { findApprovedEnterpriseModel, readBuildEnterpriseModelPolicy } from "../auth/enterprise-model-policy.js";
@@ -54,11 +55,12 @@ export class ModelRefreshOwner {
   private readonly warn: (message: string, error?: unknown) => void;
 
   private currentSnapshot: ModelRefreshSnapshot;
+  private customProviders: readonly CustomProvider[] = [];
   private refreshPromise: Promise<void> | null = null;
   private requestedSync = false;
   private requestedNetwork = false;
-  private activeSync = false;
   private activeNetwork = false;
+  private activeProviderRevision = 0;
 
   constructor(options: {
     modelRuntime: BrowserModelRuntime;
@@ -104,6 +106,20 @@ export class ModelRefreshOwner {
   /** Refresh all currently registered providers. Concurrent calls share one provider pass. */
   refresh(allowNetwork = true): Promise<void> {
     return this.requestRefresh({ syncConfiguredProviders: false, allowNetwork });
+  }
+
+  /**
+   * Finds a persisted model in the current catalogue. A custom gateway that was
+   * renamed has a new provider name but the same endpoint and model id, so it
+   * is matched by those instead of being treated as gone.
+   */
+  resolveModel(persisted: Model<Api>): Model<Api> | undefined {
+    const direct = this.models.getModel(persisted.provider, persisted.id);
+    if (direct) return direct;
+
+    const custom = resolveCustomProviderModel([...this.customProviders], persisted);
+    if (!custom) return undefined;
+    return this.models.getModel(custom.provider, custom.id) ?? undefined;
   }
 
   /** Reconcile a runtime that was deliberately skipped while busy. */
@@ -156,7 +172,10 @@ export class ModelRefreshOwner {
     if (request.syncConfiguredProviders) {
       this.requestedSync = true;
     }
-    if (request.allowNetwork && (!this.activeNetwork || this.requestedSync)) {
+    if (
+      request.allowNetwork
+      && (!this.activeNetwork || this.requestedSync || this.providersChangedDuringPass())
+    ) {
       this.requestedNetwork = true;
     }
 
@@ -164,10 +183,14 @@ export class ModelRefreshOwner {
 
     this.refreshPromise = this.runRefreshes().finally(() => {
       this.refreshPromise = null;
-      this.activeSync = false;
       this.activeNetwork = false;
     });
     return this.refreshPromise;
+  }
+
+  /** A provider registered after the active pass started is not covered by it. */
+  private providersChangedDuringPass(): boolean {
+    return this.modelRuntime.providerRevision !== this.activeProviderRevision;
   }
 
   private async runRefreshes(): Promise<void> {
@@ -176,23 +199,28 @@ export class ModelRefreshOwner {
       const allowNetwork = this.requestedNetwork;
       this.requestedSync = false;
       this.requestedNetwork = false;
-      this.activeSync = syncConfiguredProviders;
       this.activeNetwork = allowNetwork;
 
       if (syncConfiguredProviders) {
         const customProviders = await this.loadCustomProviders();
+        this.customProviders = customProviders;
         await this.modelRuntime.syncCustomProviders(customProviders);
       }
+      this.activeProviderRevision = this.modelRuntime.providerRevision;
 
+      if (allowNetwork) {
+        // Availability must not wait for catalogue requests: publish the cached state first.
+        const cached = await this.modelRuntime.refresh({ allowNetwork: false });
+        await this.publish(Array.from(cached.errors.keys()).sort());
+      }
       const result = await this.modelRuntime.refresh({
         allowNetwork,
         ...(allowNetwork ? { force: true } : {}),
       });
       await this.publish(Array.from(result.errors.keys()).sort());
 
-      this.activeSync = false;
       this.activeNetwork = false;
-    } while (this.requestedSync || this.requestedNetwork);
+    } while (this.requestedSync || this.requestedNetwork || this.providersChangedDuringPass());
   }
 
   private async publish(providerErrors: readonly string[]): Promise<void> {
@@ -228,7 +256,7 @@ export class ModelRefreshOwner {
     for (const runtime of this.getRuntimes()) {
       if (runtime.isBusy) continue;
 
-      const refreshedModel = this.models.getModel(runtime.model.provider, runtime.model.id);
+      const refreshedModel = this.resolveModel(runtime.model);
       if (refreshedModel && !areRuntimeModelsEquivalent(runtime.model, refreshedModel)) {
         runtime.applyModel(refreshedModel);
         continue;

@@ -1,0 +1,115 @@
+# Verification: writing and other mutating tools
+
+## Current merged expectations
+
+The original tables below preserve `ec453df` claims, expected text and Result columns as historical observations. Rerun their IDs against these merged expectations; the old results do not assert that this revision was tested. The [integration log](integration-fixes.md) retains its own builds and evidence.
+
+| Existing IDs | Current expected result |
+| --- | --- |
+| WRITE-01, WRITE-07, WRITE-14 | Checked chunked writing, named full/sampled verification scope, exact changed count and truthful backup status. A large empty target can succeed; a large occupied target over the backup cap is refused before overwrite. |
+| WRITE-08–11, FMT-03, STRUCT-03, OJS-03, PY-08 | Checked writers refuse merge-child/spill/protection obstacles with actionable error results. Office.js reports host failures with protection/edit/payload guidance; arbitrary code is not given checked-write guarantees. |
+| WRITE-12, WRITE-15, PY-09 | Validation violations and Excel's conversions are reported, not silently called exact preservation. Python input includes raw `values` and displayed `text`. |
+| WRITE-13 | Unqualified mutation targets are refused before writing. Include sheet names in agent calls; active-sheet changes cannot retarget them. |
+| FILL-02, FILL-05–06 | Table effects and calculation caveats disclosed; chunked fill with bounded verification. Oversize backup skips name the size limit, not missing identity. Occupied oversize targets are refused. |
+| STRUCT-01 | Destructive operations disclose affected table/filter context and recovery limits. |
+| COMMENT-02 | Missing range gives domain validation feedback, not an internal undefined-property exception. |
+| HIST-02 | Backup deletion asks even in Auto; a declined confirmation deletes nothing. |
+| PY-02–04 | Backend named; only unreachable default bridge can fall back. Missing modules and native timeouts preserve error/streams and never rerun side effects in Pyodide. |
+| PY-06–07, PY-10 | Transform includes stdout/stderr; ragged padding warned; oversized serialized input refused before execution with block-processing guidance. Output-size failures retain useful limits. |
+
+How to run this file: the fixture workbook from [README.md](README.md#how-to-run-a-pass), Auto mode unless the row says Confirm. Read the target back with `Excel.run` after each row, not with the tool under test.
+
+## tools/writing-cells.md
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| WRITE-01 | P2 | probe | Simple write result text. | Empty `Calc!C1`. | Write a string. | `Written to …`, Verified values, `Changed cell(s): 1.` | pass |
+| WRITE-02 | P2 | probe | Overwrite protection blocks and shows data. | `Spill!A3`. | Write without overwrite. | `⛔ **Write blocked**`. | pass |
+| WRITE-03 | P2 | probe | Invalid formula syntax blocked before Excel. | — | `=SUM(A1`. | Blocked, unbalanced parentheses. | — |
+| WRITE-04 | P2 | probe | Blocked spill reported as formula error. | `Spill!C1` with C3 occupied. | `=SEQUENCE(4)`. | `C1: #SPILL!`. | pass |
+| WRITE-05 | P2 | turn | Agent asks before overwriting on an explicit request. | `Protected!A2` holds text. | "change A2 to say Output". | Agent asks first. | pass (B-18) |
+| WRITE-06 | P2 | probe | Unlocked cell on a protected sheet is writable. | `Protected!B2`. | Write with overwrite. | Success. | pass |
+| WRITE-07 | P2 | probe | Verification preview capped 8 × 6. | — | Write 1 × 8. | Preview 1×6 of 1×8. | pass |
+| WRITE-08 | P1 | probe | Write inside a merge reports success, nothing written (suspected bug). | `Merged` A1:D1. | Write `Merged!B1`. | Success text, empty preview. | fail (B-01) |
+| WRITE-09 | P1 | probe | 2×2 over a merge lands 1 of 4 (suspected bug). | `Merged` B4:C6. | Write 2×2 at B4. | `Changed cell(s): 1.` | fail (B-01) |
+| WRITE-10 | P1 | probe | Overwriting a spill child breaks the anchor silently (suspected bug). | `Spill`. | Overwrite A3. | Clean result; A1 `#SPILL!`. | fail (B-03) |
+| WRITE-11 | P1 | probe | Locked cell: generic message, no protection hint. | `Protected!C1`. | Write. | `You cannot perform the requested operation.` | fail (B-10) |
+| WRITE-12 | P1 | probe | Data validation not enforced (suspected bug). | `Valid!A2`. | Write `Maybe`. | Success. | fail (B-03) |
+| WRITE-13 | P2 | probe | Unqualified start cell lands on active sheet. | Activate `My Sheet`. | Write `B2`. | `'My Sheet'!B2`. | pass |
+| WRITE-14 | P1 | probe | 60,000 × 4 write: payload error after writing (suspected bug). | `Calc`. | Write. | Error; row 60,000 present. | fail (B-02) |
+| WRITE-15 | P1 | probe | Text coerced on write (suspected bug). | `Valid!C1`. | Write `00123`, `1/2`, `3-4`, `50%`. | 123, 46024, 46085, 0.5. | fail (B-07) |
+| WRITE-16 | P1 | Confirm, probe | Write in Confirm mode with approval declined. | Confirm. | Decline. | Thrown `Mutation cancelled by user (Confirm mode).` | — |
+
+## tools/filling-a-formula.md
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| FILL-01 | P2 | probe | Simple fill text. | `Tbl!D2:D7`. | `=B2*2`. | Pattern and example formulas. | pass |
+| FILL-02 | P2 | probe | Fill next to a table extends it, unreported. | Same. | Read table range. | `Tbl!A1:D7`, header `Column1`. | fail (B-21) |
+| FILL-03 | P2 | probe | Comma in range rejected. | — | `A1:A2,B1:B2`. | Single contiguous range error. | — |
+| FILL-04 | P2 | probe | 50,000-row fill succeeds. | `Big!G2:G50001`. | Fill. | Success. | pass |
+| FILL-05 | P1 | probe | 200,000-row fill: payload error after filling (suspected bug). | `Big!F2:F200001`. | Fill; read F200001. | Error; formula present. | fail (B-02) |
+| FILL-06 | P1 | probe | Skipped backup gives the identity reason (suspected bug). | FILL-04. | Inspect details. | "workbook identity unavailable…". | fail (B-19) |
+
+## tools/formatting.md
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| FMT-01 | P2 | probe | Multi-range formatting works. | `Dates`. | `A1,C1` bold. | `Formatted **Dates!A1,Dates!C1**: bold.` | pass |
+| FMT-02 | P2 | probe | Conditional format with a value. | `Tbl`. | `cell_value` > 25. | Added. | pass |
+| FMT-03 | P1 | probe | Protected sheet: generic error. | `Protected!A1`. | Bold. | `Error formatting: You cannot perform…` | fail (B-10) |
+| FMT-04 | P2 | probe | Formatting a merged cell. | `Merged!B1`. | Bold. | `Formatted **Merged!B1**: bold.` | pass |
+
+## tools/structure-and-view.md
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| STRUCT-01 | P2 | probe | Delete rows in a filtered table by position. | `Tbl`. | Delete row 3. | Deleted, no mention of table. | pass |
+| STRUCT-02 | P2 | probe | Rename a protected sheet succeeds. | `Protected`. | Rename. | Renamed. | pass |
+| STRUCT-03 | P1 | probe | Insert rows on protected sheet: generic error. | `Protected`. | Insert. | `Error: You cannot perform…` | fail (B-10) |
+| STRUCT-04 | P2 | probe | View change notes no backup. | `Dates`. | Freeze 1 row. | `ℹ️ Backup not created.` | pass |
+
+## tools/charts-and-comments.md
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CHART-01 | P2 | probe | Create names the chart `Chart N`. | `Tbl`. | Create with title. | `Chart 'Chart 1' created`. | pass |
+| CHART-02 | P2 | probe | `get_image` needs `name`. | — | Use `chart_name`. | `name is required`. | pass |
+| CHART-03 | P3 | probe | Capture takes seconds. | — | `get_image`. | ~3 s, 600×360. | pass |
+| COMMENT-01 | P2 | probe | Add and read a comment. | `Dates!A2`. | Add; read A1:D4. | One comment by Guest User. | pass |
+| COMMENT-02 | P2 | probe | Wrong parameter name gives an internal JS error. | — | `cell` instead of `range`. | `Cannot read properties of undefined`. | fail (B-21) |
+
+## tools/office-js.md
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| OJS-01 | P2 | probe | Result fenced JSON. | — | Return an object. | `Executed Office.js: …` and JSON. | pass |
+| OJS-02 | P2 | probe | Missing load error. | — | Read `values` without load. | `The property 'values' is not available…` | pass |
+| OJS-03 | P1 | probe | Protected write: generic error. | `Protected`. | Write. | `You cannot perform…` | fail (B-10) |
+| OJS-04 | P3 | probe | 8,000-char cut holds ~130 rows of 5 columns. | `Big`. | Return 2,000 rows. | Truncation note. | pass |
+
+## tools/backups.md
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| HIST-01 | P2 | probe | List shows backups with IDs. | After writes. | `list`. | Table. | pass |
+| HIST-02 | P1 | probe, Confirm | `delete` skips approval in Confirm mode. | Confirm. | `delete`. | No dialog. | — |
+
+## tools/python.md
+
+Needs the bridge: `PORT=3340 PYTHON_BRIDGE_MODE=real node scripts/python-bridge-server.mjs --https` (an orb service), and for `libreoffice_convert`, LibreOffice (`apt-get install libreoffice-calc-nogui`). Wrap the Python tools with `applyExperimentalToolGates` from `/src/tools/experimental-tool-gates.ts`.
+
+| ID | P | Needs | Claim | Setup | Steps | Expected | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PY-01 | P2 | probe, bridge | `python_run` returns result and stdout. | Bridge up. | `print(sys.version); result = {"a": 1}`. | `Ran Python snippet (exit code 0)`, JSON, stdout. | pass |
+| PY-02 | P2 | probe | Without a bridge, `python_run` uses Pyodide silently. | Bridge stopped. | Same. | stdout `emscripten`; no backend note. | pass |
+| PY-03 | P1 | probe, bridge | A missing module returns an empty error. | No pandas. | `import pandas`. | `Error: `, `error: ""`. | fail (B-22) |
+| PY-04 | P1 | probe, bridge | A bridge timeout re-runs in Pyodide. | — | `while True: pass`, `timeout_ms: 2000`. | `Pyodide execution timed out`, 4 s. | fail (B-22) |
+| PY-05 | P2 | probe, bridge | An exception returns the traceback. | — | `1/0`. | `ZeroDivisionError` traceback. | pass |
+| PY-06 | P2 | probe, bridge | Transform hides stdout. | — | Transform that prints. | No stdout in result. | fail (B-25) |
+| PY-07 | P2 | probe, bridge | Ragged output padded silently. | — | `result = [[1,2,3],[4]]`. | 2 × 3 written, success. | fail (B-25) |
+| PY-08 | P1 | probe, bridge | Merged destination drops values. | `F1:G1` merged. | 2 × 2 at F1. | `Changed cell(s): 3.` | fail (B-01) |
+| PY-09 | P2 | probe, bridge | Formatted input arrives raw; text codes become numbers. | Dates, %, `@` codes. | Echo `input_data['values']`. | `45292`, `0.05`, `123`. | fail (B-07) |
+| PY-10 | P2 | probe, bridge | Bridge size limits. | `Big`. | Read 20,000 × 5; return 50,000 rows. | `413` body / output limits. | fail (B-25) |
+| PY-11 | P2 | probe, bridge | Overwrite protection on transform. | Occupied A1. | Output at A1. | `⛔ **Transform blocked**`. | pass |
+| PY-12 | P2 | probe, bridge | `libreoffice_convert` csv → xlsx. | LibreOffice. | Convert `/tmp/lo/t.csv`. | `Converted … to **XLSX**`. | pass |

@@ -110,3 +110,29 @@ void test("enterprise Office.js always requires per-call approval, including Aut
   assert.equal(approvals, 2, "every execution must request approval");
   assert.equal(executions, 1);
 });
+
+void test("Auto asks before destructive host JS, including bracket and encoded calls", async () => {
+  for (const code of [
+    "context.workbook.worksheets.getItem('Data').delete();",
+    "context.workbook.worksheets.getItem('Data').getRange('A1').clear();",
+    "range['clear']();",
+    "range['cl\\u0065ar']();",
+  ]) {
+    let ran = false;
+    let asked = false;
+    const [tool] = await applyExperimentalToolGates([
+      createExecuteOfficeJsTool({ runCode: () => { ran = true; return Promise.resolve(null); } }),
+    ], {
+      getExecutionMode: () => Promise.resolve("yolo"),
+      requestOfficeJsExecuteApproval: (request) => {
+        asked = true;
+        assert.equal(request.destructive, true);
+        return Promise.resolve(false);
+      },
+    });
+    assert.ok(tool);
+    await assert.rejects(() => tool.execute("destructive", { explanation: "Clear cells", code }), /cancelled/u);
+    assert.equal(asked, true);
+    assert.equal(ran, false);
+  }
+});

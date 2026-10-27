@@ -87,9 +87,9 @@ void test("workbook mutation confirmation remains optional and user-selectable",
 
   await setStoredExecutionMode(settings, "safe");
   assert.equal(await getStoredExecutionMode(settings), "safe");
-  const controller = await createExecutionModeController({ settings });
+  const controller = await createExecutionModeController({ settings, channel: null });
   assert.equal(controller.getMode(), "safe");
-  await controller.toggleFromUi();
+  await controller.setMode(toggleExecutionMode(controller.getMode()));
   assert.equal(controller.getMode(), "yolo");
   assert.equal(await getStoredExecutionMode(settings), "yolo");
   await controller.setMode(toggleExecutionMode("yolo"));

@@ -3,12 +3,14 @@
  */
 
 import { Type, type Static } from "typebox";
+import { recoveryTurn, type RecoveryAttribution } from "./recovery-metadata.js";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 
 import {
   getWorkbookRecoveryLog,
-  type WorkbookRecoverySnapshot,
+  type WorkbookRecoveryRestorePreview,
 } from "../workbook/recovery-log.js";
+import { RecoveryCursorSchema, type RecoveryPage, type RecoveryPageOptions, type RecoveryMetadata } from "../workbook/recovery/log-store.js";
 import {
   getWorkbookChangeAuditLog,
   type AppendWorkbookChangeAuditEntryArgs,
@@ -36,6 +38,13 @@ const schema = Type.Object({
       description: "Backup id for restore/delete. If omitted, the latest backup is used.",
     }),
   ),
+  overwrite_later_edits: Type.Optional(
+    Type.Boolean({
+      description:
+        "Restore only. Default: false. If cells changed after the backed-up change, restore is refused and the " +
+        "changed cells are returned; set true only after the user confirms those edits may be overwritten.",
+    }),
+  ),
   limit: Type.Optional(
     Type.Integer({
       minimum: 1,
@@ -43,6 +52,7 @@ const schema = Type.Object({
       description: "Max backups to list (list action only). Default: 10.",
     }),
   ),
+  cursor: Type.Optional(RecoveryCursorSchema),
 });
 
 type Params = Static<typeof schema>;
@@ -50,13 +60,16 @@ type Params = Static<typeof schema>;
 type RestoreResult = {
   restoredSnapshotId: string;
   inverseSnapshotId: string | null;
+  inverseSnapshotError?: string;
   address: string;
   changedCount: number;
 };
 
 interface WorkbookHistoryRecoveryLogLike {
-  listForCurrentWorkbook(limit?: number): Promise<WorkbookRecoverySnapshot[]>;
-  restore(snapshotId: string): Promise<RestoreResult>;
+  listForCurrentWorkbook(limit?: number): Promise<Array<Pick<RecoveryMetadata, "id">>>;
+  pageForCurrentWorkbook(options?: RecoveryPageOptions): Promise<RecoveryPage>;
+  restore(snapshotId: string, attribution?: { turnId?: string; toolCallId?: string }): Promise<RestoreResult>;
+  previewRestore(snapshotId: string): Promise<WorkbookRecoveryRestorePreview>;
   delete(snapshotId: string): Promise<boolean>;
   clearForCurrentWorkbook(): Promise<number>;
 }
@@ -79,11 +92,7 @@ function formatTimestamp(ts: number): string {
   }
 }
 
-function shortId(id: string): string {
-  return id.length > 12 ? id.slice(0, 12) : id;
-}
-
-function buildListMarkdown(snapshots: WorkbookRecoverySnapshot[]): string {
+function buildListMarkdown(snapshots: RecoveryMetadata[]): string {
   const lines: string[] = [];
   lines.push("Recent backups (current workbook):");
   lines.push("");
@@ -114,6 +123,7 @@ async function resolveSnapshotId(
 
 export function createWorkbookHistoryTool(
   dependencies: Partial<WorkbookHistoryToolDependencies> = {},
+  attribution: RecoveryAttribution = {},
 ): AgentTool<typeof schema, WorkbookHistoryDetails> {
   const resolvedDependencies: WorkbookHistoryToolDependencies = {
     getRecoveryLog: dependencies.getRecoveryLog ?? defaultDependencies.getRecoveryLog,
@@ -136,7 +146,8 @@ export function createWorkbookHistoryTool(
       try {
         if (action === "list") {
           const limit = params.limit ?? 10;
-          const snapshots = await log.listForCurrentWorkbook(limit);
+          const page = await log.pageForCurrentWorkbook({ limit, ...(params.cursor ? { cursor: params.cursor } : {}) });
+          const snapshots = page.entries;
 
           if (snapshots.length === 0) {
             return {
@@ -151,11 +162,13 @@ export function createWorkbookHistoryTool(
           }
 
           return {
-            content: [{ type: "text", text: buildListMarkdown(snapshots) }],
+            content: [{ type: "text", text: buildListMarkdown(snapshots) + (page.nextCursor
+              ? `\n\nMore backups: call list with cursor ${JSON.stringify(page.nextCursor)}.` : "") }],
             details: {
               kind: "workbook_history",
               action: "list",
               count: snapshots.length,
+              ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
               snapshots: snapshots.map((snapshot) => ({
                 id: snapshot.id,
                 at: snapshot.at,
@@ -196,13 +209,50 @@ export function createWorkbookHistoryTool(
             return restoreUnavailableResult;
           }
 
-          const restored = await log.restore(snapshotId);
+          const preview = await log.previewRestore(snapshotId);
+          const age = formatTimestamp(preview.at);
+          if (preview.laterEdits && !params.overwrite_later_edits) {
+            const sample = preview.laterEdits.sample.map((cell) => `- ${cell.address}: ${cell.content}`);
+            await finalizeMutationOperation(mutationFinalizeDependencies, {
+              auditEntry: {
+                toolName: "workbook_history",
+                toolCallId,
+                blocked: true,
+                outputAddress: preview.address,
+                changedCount: 0,
+                changes: [],
+                summary: `restore of ${snapshotId} refused: ${preview.laterEdits.count} cell(s) edited since`,
+              },
+            });
+            return {
+              content: [{
+                type: "text",
+                text: [
+                  `⛔ **Restore not done** — backup \`${snapshotId}\` of **${preview.address}** is from ${age}, and ` +
+                    `${preview.laterEdits.count} cell(s) have changed since that change. Restoring would overwrite them:`,
+                  ...sample,
+                  "Ask the user; if they want those edits overwritten, retry with `overwrite_later_edits: true`.",
+                ].join("\n"),
+              }],
+              details: {
+                kind: "workbook_history",
+                action: "restore",
+                snapshotId,
+                address: preview.address,
+                error: "later_edits",
+              },
+            };
+          }
+
+          const restored = await log.restore(snapshotId, { ...recoveryTurn(attribution, toolCallId), toolCallId });
           const lines: string[] = [];
-          lines.push(`✅ Restored backup \`${shortId(restored.restoredSnapshotId)}\` at **${restored.address}**.`);
+          lines.push(`✅ Restored backup \`${(restored.restoredSnapshotId)}\` (from ${age}) at **${restored.address}**.`);
           lines.push(`Changed item(s): ${restored.changedCount.toLocaleString()}.`);
 
           if (restored.inverseSnapshotId) {
-            lines.push(`Rollback backup created: \`${shortId(restored.inverseSnapshotId)}\`.`);
+            lines.push(`Rollback backup created: \`${(restored.inverseSnapshotId)}\`.`);
+          } else if (restored.inverseSnapshotError) {
+            lines.push(`⚠️ ${restored.inverseSnapshotError} This restore cannot itself be reverted from backups.`);
           }
 
           await finalizeMutationOperation(mutationFinalizeDependencies, {
@@ -213,7 +263,7 @@ export function createWorkbookHistoryTool(
               outputAddress: restored.address,
               changedCount: restored.changedCount,
               changes: [],
-              summary: `restored backup ${shortId(restored.restoredSnapshotId)} at ${restored.address}`,
+              summary: `restored backup ${(restored.restoredSnapshotId)} at ${restored.address}`,
             },
           });
 
@@ -258,7 +308,7 @@ export function createWorkbookHistoryTool(
           }
 
           return {
-            content: [{ type: "text", text: `Deleted backup \`${shortId(snapshotId)}\`.` }],
+            content: [{ type: "text", text: `Deleted backup \`${(snapshotId)}\`.` }],
             details: {
               kind: "workbook_history",
               action: "delete",

@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - "feature/enterprise-*"
+      - "integration/upstream-*"
   pull_request:
     branches:
       - "feature/enterprise-*"
+      - main
 
 permissions:
   contents: read

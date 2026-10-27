@@ -6,6 +6,8 @@ import http from "node:http";
 import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { evaluateTargetHostPolicy } from "../scripts/proxy-target-policy.mjs";
+
 const ORIGIN = "https://localhost:3141";
 const PROXY_SCRIPT_PATH = new URL("../scripts/cors-proxy-server.mjs", import.meta.url).pathname;
 
@@ -184,6 +186,21 @@ async function waitForHttpStatus(url, expectedStatus) {
   throw new Error(`Timed out waiting for ${url} to return ${expectedStatus}`);
 }
 
+async function waitForPortClosed(port) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/not-found`);
+      await response.body?.cancel();
+    } catch {
+      return;
+    }
+
+    await delay(50);
+  }
+
+  throw new Error(`Timed out waiting for port ${port} to stop listening`);
+}
+
 async function startMockTarget(responseText = "ok", extraHeaders = {}) {
   const port = await getFreePort();
   const server = http.createServer((_req, res) => {
@@ -268,6 +285,9 @@ test("proxy default allowlist includes supported OAuth and web search providers"
     "platform.claude.com",
     "auth.openai.com",
     "openrouter.ai",
+    "api.individual.githubcopilot.com",
+    "api.business.githubcopilot.com",
+    "api.enterprise.githubcopilot.com",
     "s.jina.ai",
     "api.firecrawl.dev",
     "google.serper.dev",
@@ -277,6 +297,12 @@ test("proxy default allowlist includes supported OAuth and web search providers"
 
   for (const host of requiredHosts) {
     assert.ok(loggedHosts.has(host), `Expected ${host} in default target allowlist log`);
+    assert.deepEqual(evaluateTargetHostPolicy({ hostname: host, allowedHosts: loggedHosts }), { allowed: true });
+  }
+  for (const host of ["api.individual.githubcopilot.com.example.com", "api.business.githubcopilot.com.example.com", "api.enterprise.githubcopilot.com.example.com", "api.other.githubcopilot.com", "proxy.individual.githubcopilot.com"]) {
+    const response = await fetch(`http://127.0.0.1:${proxy.port}/?url=${encodeURIComponent(`https://${host}/responses`)}`, { headers: { Origin: ORIGIN } });
+    assert.equal(response.status, 403);
+    assert.match(await response.text(), /blocked_target_not_allowlisted/);
   }
 });
 
@@ -594,9 +620,18 @@ test("proxy captures OAuth callbacks for supported localhost providers", async (
     },
   ];
 
-  await Promise.all(cases.map((entry) => waitForHttpStatus(`http://127.0.0.1:${entry.port}/not-found`, 404)));
+  // Idle proxy must not hold provider callback ports (other apps, e.g. the
+  // Codex CLI on 1455, need them for their own logins).
+  for (const entry of cases) {
+    await assert.rejects(fetch(`http://127.0.0.1:${entry.port}/not-found`));
+  }
 
   for (const entry of cases) {
+    const pollUrl = `http://127.0.0.1:${proxy.port}/oauth/callback/${entry.id}?state=${encodeURIComponent(entry.state)}`;
+    const pendingResponse = await fetch(pollUrl, { headers: { Origin: ORIGIN } });
+    assert.deepEqual(await pendingResponse.json(), { status: "pending" });
+    await waitForHttpStatus(`http://127.0.0.1:${entry.port}/not-found`, 404);
+
     const callbackUrl =
       `http://127.0.0.1:${entry.port}${entry.path}?` +
       `code=${encodeURIComponent(entry.code)}&state=${encodeURIComponent(entry.state)}`;
@@ -604,10 +639,7 @@ test("proxy captures OAuth callbacks for supported localhost providers", async (
     assert.equal(callbackResponse.status, 200);
     assert.match(await callbackResponse.text(), new RegExp(`${entry.label} login captured`));
 
-    const pollResponse = await fetch(
-      `http://127.0.0.1:${proxy.port}/oauth/callback/${entry.id}?state=${encodeURIComponent(entry.state)}`,
-      { headers: { Origin: ORIGIN } },
-    );
+    const pollResponse = await fetch(pollUrl, { headers: { Origin: ORIGIN } });
     assert.equal(pollResponse.status, 200);
 
     const payload = await pollResponse.json();
@@ -617,6 +649,9 @@ test("proxy captures OAuth callbacks for supported localhost providers", async (
     assert.equal(payload.state, entry.state);
     assert.equal(payload.url, callbackUrl);
     assert.equal(typeof payload.receivedAt, "number");
+
+    // A completed capture hands the port back without waiting for the idle timeout.
+    await waitForPortClosed(entry.port);
   }
 
   const noOrigin = await fetch(
@@ -629,6 +664,45 @@ test("proxy captures OAuth callbacks for supported localhost providers", async (
     { headers: { Origin: ORIGIN } },
   );
   assert.equal(unsupportedProvider.status, 404);
+});
+
+test("proxy releases an OAuth callback port once login polling stops", async (t) => {
+  const callbackPort = await getFreePort();
+  const proxy = await startProxy({
+    OAUTH_CALLBACK_SERVER: "1",
+    OAUTH_CALLBACK_HOST: "127.0.0.1",
+    OPENAI_OAUTH_CALLBACK_PORT: String(callbackPort),
+    OAUTH_CALLBACK_LISTENER_IDLE_MS: "600",
+  });
+  t.after(async () => {
+    await proxy.stop();
+  });
+
+  const poll = () => fetch(`http://127.0.0.1:${proxy.port}/oauth/callback/openai-codex?state=abandoned`, {
+    headers: { Origin: ORIGIN },
+  }).then((response) => response.json());
+
+  const badOrigin = await fetch(`http://127.0.0.1:${proxy.port}/oauth/callback/openai-codex?state=abandoned`, {
+    headers: { Origin: "https://evil.example.com" },
+  });
+  assert.equal(badOrigin.status, 403);
+  await delay(100);
+  await assert.rejects(fetch(`http://127.0.0.1:${callbackPort}/not-found`));
+
+  assert.deepEqual(await poll(), { status: "pending" });
+  await waitForHttpStatus(`http://127.0.0.1:${callbackPort}/not-found`, 404);
+
+  // Each poll extends the deadline, so the port stays bound past one idle period.
+  for (let i = 0; i < 4; i += 1) {
+    await delay(250);
+    assert.deepEqual(await poll(), { status: "pending" });
+  }
+  const stillBound = await fetch(`http://127.0.0.1:${callbackPort}/not-found`);
+  assert.equal(stillBound.status, 404);
+
+  // The user abandoned the login: no more polls, so the port is released.
+  await delay(600);
+  await waitForPortClosed(callbackPort);
 });
 
 test("proxy /healthz responds without an Origin header and never proxies", async (t) => {
