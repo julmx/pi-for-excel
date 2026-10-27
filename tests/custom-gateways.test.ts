@@ -534,11 +534,12 @@ void test("discovery-only gateway persists output tokens and remains editable af
   assert.equal(info.providerNames.has(gateway.displayName), false);
 });
 
-void test("gateway max output tokens override is validated and stored", async () => {
+void test("enterprise gateway max output tokens override is validated and stored", async () => {
   const store = new MemoryCustomProvidersStore();
   const saved = await saveOpenAiGatewayConfig(store, {
     endpointUrl: "https://gateway.example.com/v1",
     modelId: "model-large",
+    allowDiscoveryOnly: true,
     contextWindow: 128_000,
     maxTokens: 24_000,
   });
@@ -549,6 +550,7 @@ void test("gateway max output tokens override is validated and stored", async ()
       saveOpenAiGatewayConfig(store, {
         endpointUrl: "https://gateway.example.com/v1",
         modelId: "model-bad",
+        allowDiscoveryOnly: true,
         contextWindow: 128_000,
         maxTokens,
       }),
