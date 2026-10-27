@@ -8,6 +8,7 @@ import {
 import { isEnterpriseFetchUrlAllowed } from "../src/auth/enterprise-fetch-policy.ts";
 import { saveOpenAiGatewayConfig, type CustomProvidersStoreLike } from "../src/auth/custom-gateways.ts";
 import { BrowserModelRuntime } from "../src/models/browser-model-runtime.ts";
+import { getThinkingLevelsForModel } from "../src/models/thinking-levels.ts";
 import type { CustomProvider } from "../src/storage/local/custom-providers-store.ts";
 
 class MemoryCatalogs implements ModelsStore {
@@ -268,4 +269,78 @@ void test("each approved enterprise gateway discovers and exposes its own models
   assert.deepEqual(runtime.models.getModels(first.providerName).map((m) => m.id), ["quality-model"]);
   assert.deepEqual(runtime.models.getModels(second.providerName).map((m) => m.id), ["genx-model"]);
   assert.equal(runtime.models.getProvider(unauthorized.providerName), undefined);
+});
+
+
+void test("adjustable reasoning is opt-in per discovered gateway model", async () => {
+  const providers = new MemoryProviders();
+  const gateway = await saveOpenAiGatewayConfig(providers, {
+    endpointUrl: policy.baseUrl,
+    allowDiscoveryOnly: true,
+    reasoningModelIds: ["reasoning-a"],
+  });
+  const catalogs = new MemoryCatalogs();
+  const runtime = new BrowserModelRuntime({
+    enterprisePolicy: policy,
+    providerKeys: {
+      get: () => Promise.resolve(null),
+      set: () => Promise.resolve(),
+      delete: () => Promise.resolve(),
+      list: () => Promise.resolve([]),
+    },
+    modelCatalogs: catalogs,
+    getProxyUrl: () => Promise.resolve(undefined),
+    fetchFn: () => Promise.resolve(Response.json({
+      data: [{ id: "ordinary-b" }, { id: "reasoning-a" }],
+    })),
+  });
+  await runtime.syncCustomProviders(await providers.getAll());
+  const result = await runtime.refresh({ allowNetwork: true, force: true });
+  assert.equal(result.errors.size, 0);
+  assert.equal(runtime.models.getModel(gateway.providerName, "reasoning-a")?.reasoning, true);
+  assert.equal(runtime.models.getModel(gateway.providerName, "ordinary-b")?.reasoning, false);
+  assert.ok(getThinkingLevelsForModel(runtime.models.getModel(gateway.providerName, "reasoning-a") ?? null).length > 1);
+  assert.deepEqual(getThinkingLevelsForModel(runtime.models.getModel(gateway.providerName, "ordinary-b") ?? null), ["off"]);
+
+  const saved = catalogs.entries.get(gateway.providerName);
+  assert.equal(saved?.models.find((m) => m.id === "reasoning-a")?.reasoning, true);
+  assert.equal(saved?.models.find((m) => m.id === "ordinary-b")?.reasoning, false);
+});
+
+void test("cached discovery models follow current reasoning opt-in after an edited gateway", async () => {
+  const providers = new MemoryProviders();
+  const gateway = await saveOpenAiGatewayConfig(providers, {
+    endpointUrl: policy.baseUrl,
+    allowDiscoveryOnly: true,
+    reasoningModelIds: ["reasoning-a"],
+  });
+  const catalogs = new MemoryCatalogs();
+  await catalogs.write(gateway.providerName, {
+    models: [
+      { id: "reasoning-a", reasoning: false, provider: gateway.providerName,
+        api: "openai-completions", baseUrl: policy.baseUrl, contextWindow: 8000,
+        maxTokens: 2000, name: "reasoning-a", input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+      { id: "ordinary-b", reasoning: true, provider: gateway.providerName,
+        api: "openai-completions", baseUrl: policy.baseUrl, contextWindow: 8000,
+        maxTokens: 2000, name: "ordinary-b", input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+    ],
+  });
+  const runtime = new BrowserModelRuntime({
+    enterprisePolicy: policy,
+    providerKeys: {
+      get: () => Promise.resolve(null),
+      set: () => Promise.resolve(),
+      delete: () => Promise.resolve(),
+      list: () => Promise.resolve([]),
+    },
+    modelCatalogs: catalogs,
+    getProxyUrl: () => Promise.resolve(undefined),
+    fetchFn: () => Promise.reject(new Error("No network necessary for cached test")),
+  });
+  await runtime.syncCustomProviders(await providers.getAll());
+  const available = await runtime.models.getAvailable();
+  assert.equal(available.find((m) => m.id === "reasoning-a")?.reasoning, true);
+  assert.equal(available.find((m) => m.id === "ordinary-b")?.reasoning, false);
 });

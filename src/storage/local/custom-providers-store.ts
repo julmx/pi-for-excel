@@ -29,6 +29,8 @@ export interface CustomProvider {
   gatewayProviderName?: string;
   gatewayContextWindow?: number;
   gatewayMaxTokens?: number;
+  /** Explicit opt-in for adjustable reasoning on individual model IDs. */
+  gatewayReasoningModelIds?: string[];
 }
 
 export class CustomProvidersStore extends Store {
