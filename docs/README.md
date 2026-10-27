@@ -21,6 +21,7 @@ This folder contains **current** docs that should match shipped behavior.
 - [WPS Spreadsheets support plan](./wps-support.md)
 
 ## Proposals
+- [Plan de distribution Windows autonome](./proposals/windows-installer-plan.md)
 - [Agent tool interface redesign](./proposals/agent-tool-interface-redesign.md)
 - [Agent eval suite](./proposals/agent-evals.md)
 - [Research: Claude for Excel teardown](./research/claude-for-excel-teardown.md)
