@@ -13,6 +13,7 @@ import { t } from "../language/index.js";
 
 import { formatCompactionSummaryExtent, type CompactionSummaryMessage } from "../messages/compaction.js";
 import type { ArchivedMessagesMessage } from "../messages/archived-history.js";
+import type { InterruptedResponse } from "../messages/interrupted-response.js";
 import type { TurnChangesMessage } from "../messages/turn-changes.js";
 
 // Ensure <markdown-block> and <message-list> are registered.
@@ -20,6 +21,15 @@ import "./messages/markdown-block.js";
 import "./messages/message-list.js";
 
 const EMPTY_PENDING_TOOL_CALLS = new Set<string>();
+
+registerMessageRenderer("interruptedResponse", {
+  render(partial: InterruptedResponse) {
+    return html`
+      <assistant-message .message=${{ ...partial.message, stopReason: "stop" }} .hideToolCalls=${true}></assistant-message>
+      <span class="pi-assistant-aborted">${t("messages.interrupted")}</span>
+    `;
+  },
+});
 
 registerMessageRenderer("turnChanges", {
   render(message: TurnChangesMessage) {
