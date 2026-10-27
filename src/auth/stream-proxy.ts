@@ -661,7 +661,10 @@ export function createOfficeStreamFn(
             ),
           }
         : normalizedModel;
-      return modelsRuntime.streamSimple(streamModel, context, effectiveOptions);
+      return streamWithProviderFailure(
+        (requestOptions) => modelsRuntime.streamSimple(streamModel, context, requestOptions),
+        effectiveOptions,
+      );
     }
 
     const proxyUrl = await getProxyUrl();
